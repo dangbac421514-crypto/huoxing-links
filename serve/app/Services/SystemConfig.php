@@ -7,6 +7,15 @@ use Illuminate\Support\Facades\Cache;
 
 class SystemConfig
 {
+    private const PROTECTED_SLUGS = [
+        'ali_sms_key',
+        'ali_sms_secret',
+        'mail_password',
+        'wechat_pay_secret_key',
+        'wechat_pay_private_cert',
+        'wechat_pay_certificate',
+    ];
+
     /**
      * 获取系统配置.
      */
@@ -16,7 +25,11 @@ class SystemConfig
             $db_config = [];
             $list = SysConfig::query()->get();
             foreach ($list as $item) {
-                $db_config[data_get($item, 'slug')] = data_get($item, 'value');
+                if (in_array($item->slug, self::PROTECTED_SLUGS, true)) {
+                    continue;
+                }
+
+                $db_config[$item->slug] = $item->value;
             }
             Cache::put('_db_system_config_', $db_config);
 
@@ -37,19 +50,29 @@ class SystemConfig
     {
         $data = is_array($key) ? $key : [$key => $value];
         foreach ($data as $k => $v) {
-            if (is_array($v)) {
-                $v = json_encode($v);
+            if (in_array($k, self::PROTECTED_SLUGS, true)) {
+                if (is_string($v)) {
+                    app(SecretConfigService::class)->set($k, $v);
+                }
+
+                continue;
             }
+
             SysConfig::query()
                 ->updateOrCreate([
                     'slug' => $k,
                 ], [
                     'slug' => $k,
-                    'value' => (string) $v,
+                    'value' => $v,
                 ]);
         }
 
         // 清除缓存
+        Cache::forget('_db_system_config_');
+    }
+
+    public static function forgetCache(): void
+    {
         Cache::forget('_db_system_config_');
     }
 }

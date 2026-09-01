@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Jobs\Middleware\RateLimited;
 use App\Mail\SendEmail;
+use App\Services\SecretConfigService;
 use App\Services\SystemConfig;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -37,7 +38,7 @@ class SendEmailJobs implements ShouldQueue
         Config::set('mail.mailers.smtp.host', SystemConfig::get('mail_host'));
         Config::set('mail.mailers.smtp.port', SystemConfig::get('mail_port'));
         Config::set('mail.mailers.smtp.username', SystemConfig::get('mail_username'));
-        Config::set('mail.mailers.smtp.password', SystemConfig::get('mail_password'));
+        Config::set('mail.mailers.smtp.password', app(SecretConfigService::class)->get('mail_password'));
         Config::set('mail.from.address', SystemConfig::get('mail_from_address'));
         Config::set('mail.from.name', SystemConfig::get('mail_from_name'));
     }

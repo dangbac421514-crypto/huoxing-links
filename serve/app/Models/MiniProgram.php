@@ -16,5 +16,8 @@ class MiniProgram extends Model
 
     protected $casts = [
         'type' => MiniType::class,
+        'secret' => 'encrypted',
     ];
+
+    protected $hidden = ['secret'];
 }
