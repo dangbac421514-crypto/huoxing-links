@@ -2,14 +2,22 @@
 
 namespace Tests\Feature;
 
+use App\Exceptions\BusinessRuleException;
 use App\Models\Link;
 use App\Models\LinkVisitLog;
+use App\Models\UsagePeriod;
+use App\Services\UsageMeter;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+use Tests\Concerns\CreatesLinkFixtures;
 use Tests\TestCase;
 
 final class LinkResolutionTest extends TestCase
 {
+    use CreatesLinkFixtures;
+
     public function test_schema_keeps_links_without_an_expiry_gate_and_sanitizes_visit_logs(): void
     {
         $this->assertTrue(Schema::hasColumns('links', ['manual_status', 'health_status']));
@@ -90,5 +98,35 @@ final class LinkResolutionTest extends TestCase
         $this->assertTrue(collect($visitIndexes)->contains(
             fn (array $index): bool => $index['columns'] === ['link_id', 'created_at'],
         ));
+    }
+
+    public function test_account_uv_passes_raw_server_visitor_once_to_foundation_meter(): void
+    {
+        $user = $this->activeMemberWithUvLimit(1);
+        $at = CarbonImmutable::now('Asia/Shanghai');
+        $meter = app(UsageMeter::class);
+        $visitorId = (string) Str::uuid();
+        $otherVisitorId = (string) Str::uuid();
+
+        $meter->consume($user, $visitorId, $at);
+        $meter->consume($user, $visitorId, $at);
+
+        try {
+            $meter->consume($user, $otherVisitorId, $at);
+            $this->fail('a different visitor must be rejected at the full account quota');
+        } catch (BusinessRuleException $exception) {
+            $this->assertSame('QUOTA_EXCEEDED', $exception->errorCode);
+        }
+
+        $period = UsagePeriod::query()->where('user_id', $user->id)->firstOrFail();
+        $this->assertSame(1, (int) $period->used_uv);
+        $this->assertDatabaseHas('usage_visitors', [
+            'usage_period_id' => $period->id,
+            'visitor_hash' => hash('sha256', $visitorId),
+        ]);
+        $this->assertDatabaseMissing('usage_visitors', [
+            'usage_period_id' => $period->id,
+            'visitor_hash' => hash('sha256', $otherVisitorId),
+        ]);
     }
 }
