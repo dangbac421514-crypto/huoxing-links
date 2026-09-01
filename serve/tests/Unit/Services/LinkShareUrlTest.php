@@ -61,4 +61,32 @@ final class LinkShareUrlTest extends TestCase
             }
         }
     }
+
+    public function test_qr_landing_target_accepts_only_the_exact_generated_same_origin_url(): void
+    {
+        $link = $this->linkForType(LinkType::LANDING_MINI);
+        $urls = app(LinkShareUrl::class);
+        $target = $urls->qrLandingFor($link, 'signed+/=token');
+
+        $this->assertSame(
+            'https://short.example/qr/'.$link->code.'?visitor_token=signed%2B%2F%3Dtoken',
+            $target,
+        );
+        $urls->assertQrLandingTarget($link, $target);
+
+        foreach ([
+            'https://other.example/qr/'.$link->code.'?visitor_token=signed%2B%2F%3Dtoken',
+            'https://short.example/qr/wrong123?visitor_token=signed%2B%2F%3Dtoken',
+            $target.'&extra=1',
+            $target.'#fragment',
+            'https://short.example/qr/'.$link->code.'?visitor_token=signed+/=token',
+        ] as $mutated) {
+            try {
+                $urls->assertQrLandingTarget($link, $mutated);
+                $this->fail('mutated QR landing URL was accepted: '.$mutated);
+            } catch (LinkResolutionException $exception) {
+                $this->assertSame(LinkError::UNSAFE_URL, $exception->errorCode);
+            }
+        }
+    }
 }

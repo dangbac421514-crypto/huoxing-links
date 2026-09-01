@@ -74,11 +74,15 @@ class LinkController extends FormController
                 return false;
             }
 
-            if (in_array($type, [LinkType::MINI_PROGRAM, LinkType::LANDING_MINI], true)) {
+            $miniId = data_get($form->safeFormData, 'config.min_id');
+            if (
+                $type === LinkType::MINI_PROGRAM
+                || ($type === LinkType::LANDING_MINI && $miniId !== null && $miniId !== '')
+            ) {
                 try {
                     app(MiniProgramReferencePolicy::class)->assertAllowed(
                         $actor,
-                        (int) data_get($form->safeFormData, 'config.min_id'),
+                        (int) $miniId,
                     );
                 } catch (MiniProgramForbidden $exception) {
                     throw new BusinessRuleException($exception->errorCode, $exception->getMessage(), 403);
@@ -241,8 +245,11 @@ class LinkController extends FormController
             'config.url' => 'required_unless:type,'.LinkType::LANDING_MINI->value,
         ];
 
-        if (in_array($type, [LinkType::MINI_PROGRAM->value, LinkType::LANDING_MINI->value], true)) {
+        if ($type === LinkType::MINI_PROGRAM->value) {
             $rules['config.min_id'] = 'required|integer';
+            $rules['config.url'] = '';
+        } elseif ($type === LinkType::LANDING_MINI->value) {
+            $rules['config.min_id'] = 'nullable|integer|min:1';
             $rules['config.url'] = '';
         }
         if ($type === LinkType::CLI_QR->value) {

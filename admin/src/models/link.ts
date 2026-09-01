@@ -20,8 +20,8 @@ interface WX {
 
 // 链接类型
 export interface linkConfig {
-  domain_id: any
-  min_id: any
+  domain_id?: number | null
+  min_id?: number | null
   url: any
   expired_at: any
   wx: WX

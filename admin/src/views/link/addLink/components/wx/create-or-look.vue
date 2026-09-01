@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import useForm from '@/hooks/form'
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { InfoFilled } from '@element-plus/icons-vue'
-import { ApiDomainEnableList } from '@/api/domain'
-import { ApiAppList } from '@/api/app'
 import type { linkConfig, QR } from '@/models/link'
 import OssImage from '@/components/OssImage.vue'
 import UploadImage from '@/components/uploadImage.vue'
@@ -26,23 +24,8 @@ const { formData, formLoading } = useForm({
   }
 })
 
-// 获取域名列表
-const domainList = ref()
-const getDomainList = async () => {
-  domainList.value = await ApiDomainEnableList()
-}
-
-// 获取小程序列表
-const miniProgramList = ref()
-const getMiniProgramList = async () => {
-  miniProgramList.value = await ApiAppList()
-}
-
 const rules = {
-  'config.wx.title': [{ required: true, message: '请输入标题', trigger: 'blur' }],
-  'config.domain_id': [{ required: true, message: '请选择域名', trigger: 'blur' }],
-  'config.min_id': [{ required: true, message: '请选择小程序', trigger: 'blur' }],
-  'config.url': [{ required: true, message: '请选择二维码图片', trigger: 'blur' }]
+  'config.wx.title': [{ required: true, message: '请输入标题', trigger: 'blur' }]
 }
 
 // 创建二维码管理列表
@@ -67,10 +50,6 @@ const deleteItem = (index: any) => {
   formData.value.config.wx.qr.splice(index, 1)
 }
 const userInfo = userStore
-onMounted(() => {
-  getDomainList()
-  getMiniProgramList()
-})
 </script>
 
 <template>
@@ -214,16 +193,6 @@ onMounted(() => {
             >
           </div>
         </div>
-      </el-form-item>
-      <el-form-item prop="config.domain_id" label="无风险域名">
-        <el-select v-model="formData.config.domain_id" placeholder="请选择">
-          <el-option v-for="item in domainList" :key="item.id" :label="item.title" :value="item.id"></el-option>
-        </el-select>
-      </el-form-item>
-      <el-form-item prop="config.min_id" label="落地小程序">
-        <el-select v-model="formData.config.min_id" placeholder="请选择">
-          <el-option v-for="item in miniProgramList" :key="item.id" :label="item.name" :value="item.id"></el-option>
-        </el-select>
       </el-form-item>
     </el-form>
     <div class="show hidden-md-and-down">

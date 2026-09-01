@@ -96,6 +96,7 @@ final class LinkResolutionCoordinator
         private readonly PublicTargetCache $cache,
         private readonly WeixinSchemePolicy $weixinSchemes,
         private readonly UrlPolicy $urlPolicy,
+        private readonly LinkShareUrl $shareUrls,
     ) {}
 
     public function target(Request $request, string $code): CoordinatorResponse
@@ -137,7 +138,7 @@ final class LinkResolutionCoordinator
                 $publicTarget = $this->cache->get($link);
                 if ($publicTarget !== null) {
                     try {
-                        $this->assertTargetProtocol($type, $publicTarget['target']);
+                        $this->assertTargetProtocol($link, $type, $publicTarget['target']);
                     } catch (LinkResolutionException) {
                         // A cache entry is untrusted persisted data. Drop an
                         // invalid target and resolve once without consuming
@@ -155,7 +156,7 @@ final class LinkResolutionCoordinator
                 );
                 $publicTarget = $this->visits->publicTarget($resolved);
                 $this->assertPublicTarget($publicTarget);
-                $this->assertTargetProtocol($type, $publicTarget['target']);
+                $this->assertTargetProtocol($link, $type, $publicTarget['target']);
 
                 if ($type !== LinkType::LANDING_MINI) {
                     $this->cache->put($link, $publicTarget);
@@ -282,7 +283,7 @@ final class LinkResolutionCoordinator
         }
     }
 
-    private function assertTargetProtocol(LinkType $type, string $target): void
+    private function assertTargetProtocol(Link $link, LinkType $type, string $target): void
     {
         try {
             if ($type === LinkType::WORK_WECHAT) {
@@ -290,6 +291,12 @@ final class LinkResolutionCoordinator
                 if ($uri->getPath() === '' || $uri->getPath() === '/') {
                     throw new \RuntimeException('Work WeChat target path is invalid.');
                 }
+
+                return;
+            }
+
+            if ($type === LinkType::LANDING_MINI && str_starts_with($target, 'https://')) {
+                $this->shareUrls->assertQrLandingTarget($link, $target);
 
                 return;
             }

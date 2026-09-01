@@ -75,6 +75,97 @@ final class CardJumpOnlyTest extends TestCase
         ]);
     }
 
+    public function test_existing_user_can_create_an_h5_qr_card_without_a_mini_program(): void
+    {
+        $user = $this->plainUser('h5-qr-owner');
+        Sanctum::actingAs($user, ['*'], 'api');
+
+        $response = $this->postJson('/api/links', [
+            'type' => LinkType::LANDING_MINI->value,
+            'icon' => '2026/09/02/wechat-qr.jpg',
+            'config' => [
+                'wx' => [
+                    'title' => '添加微信',
+                    'sub_title' => '长按识别二维码',
+                    'qr' => [[
+                        'sort' => 0,
+                        'name' => '默认二维码',
+                        'path' => '2026/09/02/wechat-qr.jpg',
+                        'expired_at' => null,
+                        'uv_limit_num' => null,
+                    ]],
+                    'switch_type' => 1,
+                    'uv_limit_type' => 1,
+                ],
+            ],
+        ]);
+
+        $response->assertCreated();
+        $link = Link::query()->findOrFail($response->json('id'));
+        $this->assertSame('添加微信', $link->title);
+        $this->assertSame('长按识别二维码', $link->description);
+        $this->assertArrayNotHasKey('min_id', $link->config);
+    }
+
+    public function test_h5_qr_card_resolves_to_a_signed_same_origin_page(): void
+    {
+        $user = $this->plainUser('h5-qr-visitor');
+        $link = Link::query()->create([
+            'user_id' => $user->id,
+            'title' => '添加微信',
+            'type' => LinkType::LANDING_MINI,
+            'status' => true,
+            'manual_status' => true,
+            'health_status' => true,
+            'icon' => '2026/09/02/wechat-qr.jpg',
+            'description' => '长按识别二维码',
+            'config' => [
+                'wx' => [
+                    'title' => '添加微信',
+                    'sub_title' => '长按识别二维码',
+                    'qr' => [[
+                        'sort' => 0,
+                        'name' => '默认二维码',
+                        'path' => '2026/09/02/wechat-qr.jpg',
+                        'expired_at' => null,
+                        'uv_limit_num' => null,
+                    ]],
+                    'switch_type' => 1,
+                    'uv_limit_type' => 1,
+                ],
+            ],
+            'expired_at' => null,
+        ]);
+
+        $target = $this->getJson('/api/link-target/'.$link->code)->assertOk();
+        $token = $target->json('data.visitorToken');
+        $this->assertIsString($token);
+        $this->assertSame(
+            'https://cards.example/qr/'.$link->code.'?visitor_token='.rawurlencode($token),
+            $target->json('data.target'),
+        );
+
+        $this->getJson('/api/link-show-qr/'.$link->code.'?visitor_token='.rawurlencode($token))
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.title', '添加微信')
+            ->assertJsonPath('data.sub_title', '长按识别二维码')
+            ->assertJsonPath('data.qr', '/storage/2026/09/02/wechat-qr.jpg');
+    }
+
+    public function test_h5_qr_page_is_a_no_referrer_same_origin_shell(): void
+    {
+        $response = $this->get('/qr/abc12345?visitor_token=signed-token');
+
+        $response->assertOk()
+            ->assertHeader('Referrer-Policy', 'no-referrer')
+            ->assertHeader('X-Content-Type-Options', 'nosniff')
+            ->assertSee('正在加载二维码')
+            ->assertDontSee('signed-token', false);
+
+        $this->get('/qr/not-valid!')->assertNotFound();
+    }
+
     public function test_existing_user_without_membership_can_select_the_official_mini_pool(): void
     {
         $user = $this->plainUser('card-mini-owner');

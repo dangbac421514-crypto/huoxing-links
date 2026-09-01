@@ -12,6 +12,7 @@ use App\Exceptions\MiniProgramForbidden;
 use App\Exceptions\QrUnavailable;
 use App\Models\Link;
 use App\Services\LandingSelectionStore;
+use App\Services\LinkShareUrl;
 use App\Services\MiniProgramReferencePolicy;
 use App\Services\QrRotationService;
 use App\Services\VisitorTokenService;
@@ -32,6 +33,7 @@ final class LandingMiniTargetResolver implements TargetResolver
         private readonly LandingSelectionStore $selections,
         private readonly MiniProgramSchemeGenerator $schemes,
         private readonly WeixinSchemePolicy $schemePolicy,
+        private readonly LinkShareUrl $shareUrls,
     ) {}
 
     public function resolve(Link $link, VisitorContext $visitor): TargetResult
@@ -57,13 +59,12 @@ final class LandingMiniTargetResolver implements TargetResolver
             if (! is_string($code) || $code === '') {
                 throw new \RuntimeException('invalid link code');
             }
-            $miniId = $this->positiveInteger($config['min_id'] ?? null);
-            if ($miniId === null) {
+            $rawMiniId = $config['min_id'] ?? null;
+            $miniId = ($rawMiniId === null || $rawMiniId === '')
+                ? null
+                : $this->positiveInteger($rawMiniId);
+            if ($rawMiniId !== null && $rawMiniId !== '' && $miniId === null) {
                 throw new \RuntimeException('invalid landing mini reference');
-            }
-            $mini = $this->minis->assertAllowed($link->user, $miniId);
-            if (! (bool) $mini->getAttribute('is_pre_min') || $mini->getAttribute('type') !== MiniType::LANDING) {
-                throw new \RuntimeException('landing mini is not an official pool entry');
             }
 
             // One instant is shared by reservation, token expiry and the
@@ -75,7 +76,15 @@ final class LandingMiniTargetResolver implements TargetResolver
                 'code' => $code,
                 'visitor_token' => $token,
             ], '', '&', PHP_QUERY_RFC3986);
-            $target = $this->schemePolicy->assert($this->schemes->generate($mini, self::PAGE, $query));
+            if ($miniId === null) {
+                $target = $this->shareUrls->qrLandingFor($link, $token);
+            } else {
+                $mini = $this->minis->assertAllowed($link->user, $miniId);
+                if (! (bool) $mini->getAttribute('is_pre_min') || $mini->getAttribute('type') !== MiniType::LANDING) {
+                    throw new \RuntimeException('landing mini is not an official pool entry');
+                }
+                $target = $this->schemePolicy->assert($this->schemes->generate($mini, self::PAGE, $query));
+            }
 
             $wx = $config['wx'] ?? [];
             $wx = is_array($wx) ? $wx : [];
