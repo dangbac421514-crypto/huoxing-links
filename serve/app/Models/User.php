@@ -35,7 +35,23 @@ class User extends Authenticatable
     protected static function booted(): void
     {
         self::creating(function (User $user) {
-            $user->referral_code ??= Str::random(8);
+            if ($user->referral_code !== null && $user->referral_code !== '') {
+                return;
+            }
+
+            do {
+                $code = Str::upper(Str::random(8));
+            } while (self::query()->where('referral_code', $code)->exists());
+
+            $user->referral_code = $code;
+        });
+
+        self::updating(function (User $user): void {
+            foreach (['parent_id', 'referral_code'] as $attribute) {
+                if ($user->isDirty($attribute)) {
+                    $user->setAttribute($attribute, $user->getOriginal($attribute));
+                }
+            }
         });
     }
 

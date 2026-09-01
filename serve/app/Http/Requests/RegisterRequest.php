@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Enums\CodeMode;
 use App\Services\SystemConfig;
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Cache;
 
@@ -20,7 +21,7 @@ class RegisterRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
@@ -46,7 +47,7 @@ class RegisterRequest extends FormRequest
                         }
                     }
                 }],
-                'referral_code' => '', // 推荐码
+                'referral_code' => 'nullable|string|exists:users,referral_code', // 推荐码
             ];
         }
 
@@ -56,7 +57,7 @@ class RegisterRequest extends FormRequest
                 'unique:users,username',
             ],
             'password' => 'required|min:6|confirmed',
-            'referral_code' => '', // 推荐码
+            'referral_code' => 'nullable|string|exists:users,referral_code', // 推荐码
         ];
     }
 

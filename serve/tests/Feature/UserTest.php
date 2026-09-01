@@ -2,89 +2,68 @@
 
 namespace Tests\Feature;
 
-use App\Enums\CommissionType;
-use App\Jobs\SendEmailJobs;
+use App\Enums\UserType;
 use App\Models\User;
 use App\Models\VipPackage;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
-class UserTest extends TestCase
+final class UserTest extends TestCase
 {
-    public function test_send_mail()
+    public function test_register_binds_its_referrer_without_commission_side_effects(): void
     {
-        SendEmailJobs::dispatch('724323954@qq.com', '123321');
-    }
-
-    public function test_get_token()
-    {
-        dd($this->get_admin_token());
-    }
-
-    // 注册
-    public function test_register()
-    {
-        $agent = User::query()->where('id', 2)->first();
-        $referral_code = $agent->referral_code;
-        $phone = fake('zh_CN')->phoneNumber();
+        $agent = User::factory()->create(['type' => UserType::AGENT]);
+        $username = '138'.fake()->numerify('########');
 
         $response = $this
             ->postJson('/api/register', [
-                'username' => $phone,
+                'username' => $username,
                 'password' => '123456',
                 'password_confirmation' => '123456',
-                'captcha' => '6666',
-                'referral_code' => $referral_code ?? null,
+                'referral_code' => $agent->referral_code,
             ]);
         $response->assertStatus(200);
         $this->assertDatabaseHas('users', [
-            'username' => $phone,
+            'username' => $username,
+            'parent_id' => $agent->id,
         ]);
-        if (! empty($referral_code)) {
-            $child = User::query()->where('parent_id', $agent->id)->orderByDesc('id')->first();
-            $this->assertDatabaseHas('commission_logs', [
-                'user_id' => $agent->id,
-                'type' => CommissionType::Rebates->value,
-                'children_user_id' => $child->id,
-            ]);
-        }
-    }
-
-    private function get_admin_token()
-    {
-        $admin = User::query()->where('username', 'admin')->first();
-
-        return $admin->createToken('api')->plainTextToken;
-    }
-
-    public function test_user_package_fix(): void
-    {
-        $token = $this->get_admin_token();
-
-        $user = User::query()
-            ->inRandomOrder()
-            ->where('id', 2)
-            ->first();
-        $id = $user->id;
-        $u_vip_id = $user->vip_id;
-        $vip = VipPackage::query()
-            ->when(! empty($u_vip_id), function ($query) use ($u_vip_id) {
-                $query->whereNot('id', $u_vip_id);
-            })
-            ->inRandomOrder()
-            ->first();
-
-        $response = $this
-            ->withHeaders([
-                'Authorization' => "Bearer {$token}",
-            ])
-            ->putJson("/api/users/{$id}", [
-                'vip_id' => $vip->id,
-            ]);
-
-        $response->assertStatus(200);
         $this->assertDatabaseHas('users', [
-            'vip_id' => $vip->id,
-            // 'end_at' => '', // TODO
+            'id' => User::query()->where('username', $username)->value('id'),
+            'commission' => 0,
+            'accumulate_commission' => 0,
+        ]);
+    }
+
+    public function test_user_package_update_uses_the_membership_service(): void
+    {
+        $admin = User::factory()->create([
+            'username' => 'test-admin',
+            'type' => UserType::Admin,
+            'must_change_password' => false,
+            'password' => Hash::make('password'),
+        ]);
+        $user = User::factory()->create();
+        $package = VipPackage::query()->create([
+            'name' => 'test-package',
+            'price' => 0,
+            'level' => 1,
+            'config' => [],
+        ]);
+        $token = $admin->createToken('test')->plainTextToken;
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->putJson('/api/users/'.$user->id, [
+                'vip_id' => $package->id,
+                'action' => 'open',
+                'reason' => '测试开通',
+                'idempotency_key' => (string) Str::uuid(),
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('users', [
+            'id' => $user->id,
+            'vip_id' => $package->id,
         ]);
     }
 }

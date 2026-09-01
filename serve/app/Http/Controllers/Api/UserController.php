@@ -83,6 +83,8 @@ class UserController extends Controller
             'action' => 'sometimes|nullable|in:open,renew,upgrade,downgrade,revoke',
             'reason' => 'required_with:action|string|max:1000',
             'idempotency_key' => 'required_with:action|uuid',
+            'parent_id' => 'prohibited',
+            'referral_code' => 'prohibited',
         ]);
 
         $action = $request->string('action')->toString();

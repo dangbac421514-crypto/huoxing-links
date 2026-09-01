@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Enums\CodeMode;
 use App\Services\SystemConfig;
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 class LoginRequest extends FormRequest
@@ -19,7 +20,7 @@ class LoginRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
@@ -30,9 +31,6 @@ class LoginRequest extends FormRequest
             ],
             'password' => 'required|min:6',
         ];
-        if (request('username') === 'admin') {
-            return $rules;
-        }
         $is_open = SystemConfig::get('verify_code_is_open');
         if ($is_open) {
             $code_mode = SystemConfig::get('send_code_mode');
