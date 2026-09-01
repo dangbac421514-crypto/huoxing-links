@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\UserType;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -14,11 +15,11 @@ use Ugly\Base\Traits\SerializeDate;
 
 class User extends Authenticatable
 {
-    use HasApiTokens, SearchModel, SerializeDate;
+    use HasApiTokens, HasFactory, SearchModel, SerializeDate;
 
     protected $guarded = [];
 
-    protected $hidden = ['password'];
+    protected $hidden = ['password', 'remember_token', 'tokens'];
 
     protected $casts = [
         'type' => UserType::class,
@@ -26,12 +27,15 @@ class User extends Authenticatable
         'accumulate_credit' => Amount::class.':4',
         'commission' => Amount::class,
         'accumulate_commission' => Amount::class,
+        'start_at' => 'datetime',
+        'end_at' => 'datetime',
+        'must_change_password' => 'boolean',
     ];
 
     protected static function booted(): void
     {
         self::creating(function (User $user) {
-            $user->referral_code = Str::random(8);
+            $user->referral_code ??= Str::random(8);
         });
     }
 
