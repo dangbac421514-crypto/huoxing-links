@@ -614,10 +614,7 @@ final class MembershipService
 
     private function compareDates(mixed $left, mixed $right): int
     {
-        return strcmp(
-            $this->immutableDate($left)->format('Y-m-d H:i:s'),
-            $this->immutableDate($right)->format('Y-m-d H:i:s'),
-        );
+        return $this->immutableDate($left)->getTimestamp() <=> $this->immutableDate($right)->getTimestamp();
     }
 
     private function immutableDate(mixed $date): CarbonImmutable
