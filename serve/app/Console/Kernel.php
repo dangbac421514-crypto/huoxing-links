@@ -15,7 +15,7 @@ class Kernel extends ConsoleKernel
         // 会员到期
         $schedule->command('app:vip-expired')->hourly();
         // URL状态检测
-        Schedule::command('app:chk-link')->daily();
+        $schedule->command('app:chk-link')->daily();
     }
 
     /**
