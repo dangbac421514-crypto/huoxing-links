@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Contracts\MiniProgramSchemeGenerator;
 use App\Enums\LinkType;
+use App\Enums\MiniType;
 use App\Enums\UserType;
 use App\Forms\BaseConfig;
 use App\Models\Link;
@@ -122,23 +124,27 @@ final class SecretAtRestTest extends TestCase
     {
         $cache = app(SanitizedLinkVisitRecorder::class)->sanitize([
             'title' => 'safe',
-            'params' => [
-                'appid' => 'appid',
-                'path' => 'pages/index',
-                'secret' => 'visit-secret',
-            ],
+            'description' => 'safe description',
+            'target' => 'weixin://dl/business/?t=safe',
+            'params' => ['appid' => 'appid', 'secret' => 'visit-secret'],
         ]);
         $log = app(SanitizedLinkVisitRecorder::class)->record([
             'link_id' => 1,
             'user_id' => 1,
-            'device_uid' => 'device',
             'cache' => $cache,
         ]);
 
         $stored = DB::table('link_visit_logs')->where('id', $log->id)->value('cache');
         $this->assertStringNotContainsString('visit-secret', $stored);
-        $this->assertSame('appid', json_decode($stored, true)['params']['appid']);
-        $this->assertArrayNotHasKey('secret', json_decode($stored, true)['params']);
+        $storedCache = json_decode($stored, true);
+        ksort($storedCache);
+        $expectedCache = [
+            'title' => 'safe',
+            'description' => 'safe description',
+            'target' => 'weixin://dl/business/?t=safe',
+        ];
+        ksort($expectedCache);
+        $this->assertSame($expectedCache, $storedCache);
     }
 
     public function test_legacy_encryption_scrubs_persisted_visit_secrets(): void
@@ -156,10 +162,10 @@ final class SecretAtRestTest extends TestCase
         $this->artisan('app:encrypt-legacy-secrets')->assertExitCode(0);
         $stored = DB::table('link_visit_logs')->value('cache');
         $this->assertStringNotContainsString($secret, $stored);
-        $this->assertArrayNotHasKey('secret', json_decode($stored, true)['params']);
+        $this->assertSame([], json_decode($stored, true));
     }
 
-    public function test_jump_controller_persists_only_sanitized_visit_params(): void
+    public function test_jump_controller_persists_only_sanitized_public_target(): void
     {
         $user = User::query()->create([
             'username' => 'jump-admin',
@@ -167,24 +173,44 @@ final class SecretAtRestTest extends TestCase
             'status' => true,
             'type' => UserType::Admin,
         ]);
+        $mini = MiniProgram::query()->create([
+            'user_id' => $user->id,
+            'name' => 'jump-admin-mini',
+            'app_id' => 'wxjumpadmin123456',
+            'secret' => 'jump-controller-secret',
+            'url' => 'pages/index/index',
+            'type' => MiniType::OWN,
+            'is_enable' => true,
+        ]);
         $link = Link::query()->create([
             'user_id' => $user->id,
             'title' => 'safe jump',
-            'type' => LinkType::WORK_WECHAT,
+            'type' => LinkType::MINI_PROGRAM,
             'status' => true,
+            'manual_status' => true,
+            'health_status' => true,
             'icon' => '',
             'description' => '',
-            'config' => ['url' => 'https://example.test/target'],
+            'config' => ['min_id' => $mini->id],
             'expired_at' => now()->addHour(),
         ]);
+        app()->instance(MiniProgramSchemeGenerator::class, new class implements MiniProgramSchemeGenerator
+        {
+            public function generate(MiniProgram $mini, string $path, string $query): string
+            {
+                return 'weixin://dl/business/?t=safe-jump';
+            }
+        });
 
         $response = $this->getJson('/api/link-target/'.$link->code.'?device_uid=controller-device');
         $response->assertOk();
 
         $stored = DB::table('link_visit_logs')->where('link_id', $link->id)->value('cache');
         $this->assertNotNull($stored);
-        $this->assertStringNotContainsString('secret', $stored);
-        $this->assertStringNotContainsString('plaintext', $response->getContent());
+        $this->assertStringNotContainsString('jump-controller-secret', $stored);
+        $this->assertStringNotContainsString('device_uid', $stored);
+        $this->assertStringNotContainsString('jump-controller-secret', $response->getContent());
+        $this->assertStringNotContainsString('params', $response->getContent());
     }
 
     public function test_deterministic_json_sorts_maps_recursively_but_preserves_lists(): void

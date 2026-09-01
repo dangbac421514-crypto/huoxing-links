@@ -50,6 +50,22 @@ final class VisitorIdentityService
         );
     }
 
+    /**
+     * Hash a network identifier for abuse-detection logs with purpose
+     * separation. Raw IP/User-Agent values never leave the request boundary.
+     */
+    public function hashForLog(string $purpose, ?string $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (! in_array($purpose, ['ip', 'user_agent'], true)) {
+            throw new \InvalidArgumentException('Unsupported visitor log hash purpose.');
+        }
+
+        return hash_hmac('sha256', $purpose.':'.$value, $this->hashKey());
+    }
+
     private function hashKey(): string
     {
         $key = config('app.visitor_hash_key');

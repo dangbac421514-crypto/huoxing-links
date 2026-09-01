@@ -29,4 +29,12 @@ class LinkVisitLog extends Model
     protected $casts = [
         'cache' => 'json',
     ];
+
+    /**
+     * Raw network identity is retained only for reading legacy rows during
+     * migration. Never expose it through API/model serialization.
+     *
+     * @var list<string>
+     */
+    protected $hidden = ['ip', 'device_uid'];
 }
