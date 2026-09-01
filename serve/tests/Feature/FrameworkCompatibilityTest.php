@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\Api\AuthController;
 use App\Models\User;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -17,18 +16,7 @@ final class FrameworkCompatibilityTest extends TestCase
     {
         $this->assertSame(13, (int) explode('.', Application::VERSION)[0]);
         $this->artisan('route:list')->assertExitCode(0);
-        if (! Schema::hasTable('personal_access_tokens')) {
-            Schema::create('personal_access_tokens', function (Blueprint $table): void {
-                $table->id();
-                $table->morphs('tokenable');
-                $table->text('name');
-                $table->string('token', 64)->unique();
-                $table->text('abilities')->nullable();
-                $table->timestamp('last_used_at')->nullable();
-                $table->timestamp('expires_at')->nullable()->index();
-                $table->timestamps();
-            });
-        }
+        $this->assertTrue(Schema::hasTable('personal_access_tokens'));
         $user = User::query()->create([
             'username' => 'compatibility-'.Str::random(16),
             'password' => 'password',
