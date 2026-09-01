@@ -15,13 +15,13 @@ included.
 | Capability | Candidate | URL | Version/commit | License | Maintenance signal | Adopt/reject reason |
 | --- | --- | --- | --- | --- | --- | --- |
 | External HTTP | Laravel HTTP Client | https://github.com/laravel/framework/tree/v13.0.0 | Laravel 13.0.0 supplied client | MIT | Official Laravel release tag | **Adopt**; use the framework-provided client and add no production dependency. |
-| External HTTP | Existing Guzzle | https://github.com/guzzle/guzzle | Existing lock: 7.9.2 | MIT | Existing transitive/runtime package in lock | **Reject as primary abstraction**; retain only where existing code requires it. |
-| External HTTP | Symfony HttpClient | https://github.com/symfony/http-client | Existing lock: v6.4.11 | MIT | Official Symfony component, maintained upstream | **Reject**; duplicates the framework path and is not the approved application interface. |
+| External HTTP | Existing Guzzle | https://github.com/guzzle/guzzle/tree/7.9.2 | 7.9.2 | MIT | Composer lock tag; maintained upstream | **Reject as primary abstraction**; retain only where existing code requires it. |
+| External HTTP | Symfony HttpClient | https://github.com/symfony/http-client/tree/v6.4.11 | v6.4.11 | MIT | Composer lock tag; maintained upstream | **Reject**; duplicates the framework path and is not the approved application interface. |
 | Backend runtime | Laravel 10 / PHP 8.1 | https://github.com/laravel/framework/tree/v10.48.20 | v10.48.20 / PHP 8.1 | MIT / PHP license | Existing lock tag | **Reject**; below the approved runtime target. |
 | Backend runtime | Laravel 12 / PHP 8.2 | https://github.com/laravel/framework/tree/v12.0.0 | v12.0.0 / PHP 8.2 | MIT / PHP license | Official release tag | **Reject**; not the approved target. |
 | Backend runtime | Laravel 13 / PHP 8.3 | https://github.com/laravel/framework/tree/v13.0.0 | v13.0.0 / PHP 8.3 | MIT / PHP license | Official release tag | **Adopt**; target for foundation task and runtime modernization. |
-| Image captcha | mews/captcha | https://github.com/mewebstudio/captcha | Existing lock: 3.4.3 | MIT | Existing package in lock | **Reject**; controller approved Gregwar Captcha instead. |
-| Image captcha | Gregwar Captcha | https://github.com/Gregwar/Captcha | 2.1.1 | MIT | Established package; version pinned by approval | **Adopt**; approved captcha implementation. |
+| Image captcha | mews/captcha | https://github.com/mewebstudio/captcha/tree/3.4.3 | 3.4.3 | MIT | Composer lock tag; maintained upstream | **Reject**; controller approved Gregwar Captcha instead. |
+| Image captcha | Gregwar Captcha | https://github.com/Gregwar/Captcha/tree/2.1.1 | 2.1.1 | MIT | Approved pinned release tag | **Adopt**; approved captcha implementation. |
 | Image captcha | Custom GD | N/A — in-repository procedure, no versioned artifact | N/A — custom code has no release tag | Project/root terms | No independent maintenance signal | **Reject**; increases security and maintenance surface. |
 | SMS | Custom AliDySms | N/A — in-repository procedure, no versioned artifact | N/A — custom implementation has no release tag | Project/root terms | Local implementation only | **Reject**; replace custom gateway handling with approved adapter. |
 | SMS | Existing EasySMS | https://github.com/overtrue/easy-sms/tree/3.0.1 | 3.0.1 existing; 3.2.1 upgrade target | MIT | Existing lock tag; upstream release history | **Adopt via upgrade target**; use `overtrue/easy-sms` 3.2.1 with Aliyun gateway. |
