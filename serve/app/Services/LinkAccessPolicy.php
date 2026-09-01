@@ -3,11 +3,11 @@
 namespace App\Services;
 
 use App\DTO\AccessDecision;
-use App\Enums\LinkType;
 use App\Exceptions\BusinessRuleException;
 use App\Models\Link;
 use App\Models\User;
 use App\Support\LinkError;
+use App\Support\LinkTypeParser;
 use Carbon\CarbonImmutable;
 
 final class LinkAccessPolicy
@@ -37,8 +37,7 @@ final class LinkAccessPolicy
             return AccessDecision::deny(LinkError::MEMBERSHIP_EXPIRED);
         }
 
-        $rawType = $link->getRawOriginal('type');
-        $type = is_numeric($rawType) ? LinkType::tryFrom((int) $rawType) : null;
+        $type = LinkTypeParser::parse($link->getRawOriginal('type'));
         if (! $type) {
             return AccessDecision::deny(LinkError::LINK_TYPE_UNSUPPORTED);
         }

@@ -6,6 +6,7 @@ use App\Enums\LinkType;
 use App\Models\Link;
 use App\Support\LinkError;
 use App\Services\LinkAccessPolicy;
+use App\Support\LinkTypeParser;
 use Carbon\CarbonImmutable;
 use Tests\Concerns\CreatesLinkFixtures;
 use Tests\TestCase;
@@ -91,6 +92,41 @@ final class LinkAccessPolicyTest extends TestCase
 
         $owner->vipPackage->update(['config' => ['invalid' => true]]);
         $this->assertSame(LinkError::MEMBERSHIP_EXPIRED, app(LinkAccessPolicy::class)->check($link->fresh(), $at)->errorCode);
+    }
+
+    public function test_only_true_integers_and_canonical_integer_strings_are_link_types(): void
+    {
+        $this->assertSame(LinkType::MINI_PROGRAM, LinkTypeParser::parse(1));
+        $this->assertSame(LinkType::MINI_PROGRAM, LinkTypeParser::parse('1'));
+
+        foreach ([1.5, '1.0', '1e0', true, ' 1', '1 ', '', null, 999] as $raw) {
+            $this->assertNull(LinkTypeParser::parse($raw), 'raw value should be rejected: '.var_export($raw, true));
+        }
+    }
+
+    public function test_rejected_raw_type_values_return_unsupported_policy_decisions_without_enum_errors(): void
+    {
+        $at = CarbonImmutable::parse('2026-09-02 12:00:00', 'Asia/Shanghai');
+        $owner = $this->activeMemberWithUvLimit(10);
+        $link = Link::query()->create([
+            'user_id' => $owner->id,
+            'title' => 'Strict type',
+            'description' => '',
+            'icon' => '/icon.png',
+            'type' => LinkType::MINI_PROGRAM,
+            'status' => 1,
+            'manual_status' => 1,
+            'health_status' => 1,
+            'config' => ['url' => 'pages/index/index'],
+        ]);
+
+        foreach ([1.5, '1.0', '1e0', true, ' 1', '1 ', '', null, 999] as $raw) {
+            $attributes = $link->getAttributes();
+            $attributes['type'] = $raw;
+            $link->setRawAttributes($attributes);
+            $link->syncOriginal();
+            $this->assertSame(LinkError::LINK_TYPE_UNSUPPORTED, app(LinkAccessPolicy::class)->check($link, $at)->errorCode);
+        }
     }
 
 }

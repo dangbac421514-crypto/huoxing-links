@@ -15,6 +15,7 @@ use App\Services\LinkAccessPolicy;
 use App\Services\LinkShareUrl;
 use App\Services\MiniProgramReferencePolicy;
 use App\Support\LinkError;
+use App\Support\LinkTypeParser;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -68,7 +69,7 @@ class LinkController extends FormController
 
         $actor = auth('api')->user();
         $form->policy(function (FormService $form) use ($actor): bool {
-            $type = LinkType::tryFrom((int) request()->input('type'));
+            $type = LinkTypeParser::parse(request()->input('type'));
             if (! $type) {
                 return false;
             }
@@ -207,14 +208,14 @@ class LinkController extends FormController
     {
         $decision = app(LinkAccessPolicy::class)->check($link, CarbonImmutable::now('Asia/Shanghai'));
         $rawType = $link->getRawOriginal('type');
-        $knownType = is_numeric($rawType) && LinkType::tryFrom((int) $rawType) !== null;
+        $knownType = LinkTypeParser::parse($rawType) !== null;
         if ($knownType) {
             $data = $link->toArray();
         } else {
             // Eloquent enum casts throw ValueError for dirty legacy values;
             // serialize raw, non-secret fields explicitly for this boundary.
             $data = $link->getAttributes();
-            $data['type'] = is_numeric($rawType) ? (int) $rawType : null;
+            $data['type'] = LinkTypeParser::normalize($rawType);
             $data['config'] = is_string($data['config'] ?? null)
                 ? (json_decode($data['config'], true) ?: [])
                 : (is_array($data['config'] ?? null) ? $data['config'] : []);
