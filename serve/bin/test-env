@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+cd "$(dirname "$0")/.."
+: "${APP_ENV:=testing}"
+: "${DB_CONNECTION:=mysql}"
+: "${DB_HOST:=127.0.0.1}"
+: "${DB_PORT:=33067}"
+: "${APP_KEY:=base64:dGVzdC1rZXl0ZXN0LWtleXRlc3Qta2V5dGVzdC1rZXk=}"
+: "${APP_VISITOR_HASH_KEY:=test-visitor-hash-key-not-secret}"
+: "${APP_VISITOR_TOKEN_KEY:=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}"
+: "${DB_DATABASE:=link_saas_test}"
+: "${DB_USERNAME:=link_test}"
+: "${DB_PASSWORD:=link_test_password}"
+: "${REDIS_HOST:=127.0.0.1}"
+: "${REDIS_PORT:=6390}"
+: "${REDIS_DB:=14}"
+: "${REDIS_CACHE_DB:=15}"
+: "${REDIS_PREFIX:=link_saas_test_}"
+: "${CACHE_STORE:=array}"
+: "${CACHE_DRIVER:=array}"
+: "${MAIL_MAILER:=array}"
+: "${QUEUE_CONNECTION:=sync}"
+export APP_ENV DB_CONNECTION DB_HOST DB_PORT APP_KEY APP_VISITOR_HASH_KEY APP_VISITOR_TOKEN_KEY DB_DATABASE DB_USERNAME DB_PASSWORD
+export REDIS_HOST REDIS_PORT REDIS_DB REDIS_CACHE_DB REDIS_PREFIX
+export CACHE_STORE CACHE_DRIVER MAIL_MAILER QUEUE_CONNECTION
+
+# Collision 7 forwards a trailing `-v` to PHPUnit 10, which no longer accepts
+# that short option. Keep the brief's command form usable without changing
+# arguments for any other command.
+if [[ "${1:-}" == "php" && "${2:-}" == "artisan" && "${3:-}" == "test" ]]; then
+    normalized=("$1" "$2" "$3")
+    for argument in "${@:4}"; do
+        [[ "$argument" == "-v" ]] || normalized+=("$argument")
+    done
+    set -- "${normalized[@]}"
+fi
+
+exec "$@"

@@ -4,6 +4,7 @@ namespace Tests;
 
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Application;
+use Tests\Support\TestEnvironmentGuard;
 
 trait CreatesApplication
 {
@@ -12,6 +13,7 @@ trait CreatesApplication
      */
     public function createApplication(): Application
     {
+        TestEnvironmentGuard::assertSafe();
         $app = require __DIR__.'/../bootstrap/app.php';
 
         $app->make(Kernel::class)->bootstrap();

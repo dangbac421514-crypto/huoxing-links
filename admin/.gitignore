@@ -1,2 +1,8 @@
 /node_modules/
 /.idea/
+.env
+.env.*
+!.env.example
+!.env.development.example
+.env.backup
+.env.*.backup
