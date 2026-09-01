@@ -32,6 +32,10 @@ final class VisitorIdentityService
 
     public function cookie(VisitorIdentity $identity): SymfonyCookie
     {
+        if (! Str::isUuid($identity->visitorId)) {
+            throw new LinkResolutionException('VISITOR_ID_INVALID', 'Visitor identity is invalid.');
+        }
+
         return Cookie::make(
             self::COOKIE_NAME,
             $identity->visitorId,

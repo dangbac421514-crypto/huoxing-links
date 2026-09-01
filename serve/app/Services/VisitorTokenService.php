@@ -29,6 +29,10 @@ final class VisitorTokenService
         $encrypter = $this->encrypter();
 
         try {
+            $decodedToken = base64_decode($token, true);
+            if ($decodedToken === false || base64_encode($decodedToken) !== $token) {
+                throw $this->invalid();
+            }
             $decoded = json_decode($encrypter->decryptString($token), true, 512, JSON_THROW_ON_ERROR);
             $required = ['code', 'visitor_id', 'exp', 'jti'];
             if (

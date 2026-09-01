@@ -64,6 +64,17 @@ final class VisitorIdentityTest extends TestCase
         }
     }
 
+    public function test_cookie_rejects_an_invalid_dto_visitor_id_without_signing_it(): void
+    {
+        try {
+            app(VisitorIdentityService::class)->cookie(new VisitorIdentity('not-a-uuid', 'hash-1', true));
+            $this->fail('invalid DTO visitor id received a cookie');
+        } catch (LinkResolutionException $exception) {
+            $this->assertSame('VISITOR_ID_INVALID', $exception->errorCode);
+            $this->assertSame('Visitor identity is invalid.', $exception->getMessage());
+        }
+    }
+
     public function test_hash_key_must_be_independent_and_at_least_32_bytes(): void
     {
         foreach (['', str_repeat('x', 31)] as $key) {
@@ -95,6 +106,7 @@ final class VisitorIdentityTest extends TestCase
         $this->assertSame($first->hash, $second->hash);
         $this->assertSame($first->token, $second->token);
         $this->assertSame('anonymous', $first->visitorId);
+        $this->assertTrue($first->isAnonymous());
         $this->assertNull($first->token);
     }
 }

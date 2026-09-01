@@ -44,10 +44,43 @@ final class VisitorTokenServiceTest extends TestCase
     {
         $service = app(VisitorTokenService::class);
         $token = $service->issue('abc123', 'visitor-1', CarbonImmutable::now()->addMinute());
-        $applicationKey = str_repeat('a', 32);
+        $applicationKey = (string) config('app.key');
+        $this->assertStringStartsWith('base64:', $applicationKey);
+        $applicationKey = base64_decode(substr($applicationKey, 7), true);
+        $this->assertIsString($applicationKey);
+        $this->assertSame(32, strlen($applicationKey));
 
         $this->expectException(\Throwable::class);
         (new Encrypter($applicationKey, 'aes-256-gcm'))->decryptString($token);
+    }
+
+    public function test_non_canonical_base64_tokens_are_rejected_before_decryption(): void
+    {
+        $service = app(VisitorTokenService::class);
+        $expiresAt = CarbonImmutable::now()->addMinutes(10);
+        $token = $service->issue('abc123', 'visitor-1', $expiresAt);
+        $this->assertSame('visitor-1', $service->verify($token, 'abc123', CarbonImmutable::now())->visitorId);
+
+        $variants = [
+            '!'.$token,
+            $token.'!',
+            ' '.$token,
+            $token.' ',
+            "\n{$token}",
+            "{$token}\n",
+            $token.'=',
+            $token.'==',
+            $token.'@',
+        ];
+        foreach ($variants as $variant) {
+            try {
+                $service->verify($variant, 'abc123', CarbonImmutable::now());
+                $this->fail('non-canonical token was accepted');
+            } catch (InvalidVisitorToken $exception) {
+                $this->assertSame('VISITOR_TOKEN_INVALID', $exception->errorCode);
+                $this->assertSame('Invalid visitor token', $exception->getMessage());
+            }
+        }
     }
 
     public function test_wrong_code_tamper_and_exact_expiry_are_invalid(): void

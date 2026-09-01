@@ -10,6 +10,8 @@ final class TestingIsolationTest extends TestCase
     public function test_test_runtime_uses_the_isolated_allowlist(): void
     {
         $this->assertSame('testing', app()->environment());
+        $this->assertSame('predis', (string) env('REDIS_CLIENT'));
+        $this->assertSame('predis', (string) config('database.redis.client'));
         $this->assertNotSame('', (string) env('APP_KEY'));
         $this->assertNotSame('', (string) env('APP_VISITOR_HASH_KEY'));
         $this->assertSame(32, strlen((string) base64_decode((string) env('APP_VISITOR_TOKEN_KEY'), true)));

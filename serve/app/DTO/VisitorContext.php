@@ -19,4 +19,9 @@ final readonly class VisitorContext
     {
         return new self('anonymous', hash('sha256', 'anonymous'));
     }
+
+    public function isAnonymous(): bool
+    {
+        return $this->visitorId === 'anonymous';
+    }
 }
