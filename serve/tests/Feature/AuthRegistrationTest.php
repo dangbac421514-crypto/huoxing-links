@@ -68,7 +68,7 @@ final class AuthRegistrationTest extends TestCase
         app(VerificationCodeService::class)->send(
             CodeMode::Email,
             'new@example.com',
-            '203.0.113.14',
+            '127.0.0.1',
             'register',
             'REGISTER_EMAIL',
         );
@@ -338,7 +338,7 @@ final class AuthRegistrationTest extends TestCase
         app(VerificationCodeService::class)->send(
             CodeMode::SMS,
             $username,
-            '203.0.113.15',
+            '127.0.0.1',
             'register',
             'REGISTER_TEMPLATE',
         );

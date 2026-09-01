@@ -11,6 +11,7 @@ use App\Services\LaravelMailGateway;
 use App\Services\SecretConfigService;
 use App\Services\SystemConfig;
 use App\Services\VerificationCodeService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Redis;
 use Tests\Support\FakeEmailGateway;
@@ -63,6 +64,97 @@ final class EmailVerificationTest extends TestCase
         }
 
         Mail::assertNothingSent();
+    }
+
+    public function test_email_code_is_bound_to_the_sending_ip_without_exposing_the_ip(): void
+    {
+        $service = app(VerificationCodeService::class);
+        $service->send(CodeMode::Email, 'ip@example.com', '203.0.113.50', 'register', 'REGISTER_EMAIL');
+        $code = $this->fake->lastCode('ip@example.com');
+        $identity = hash_hmac('sha256', 'ip@example.com', (string) config('app.key'));
+        $payload = Cache::store('redis')->get('verification:EMAIL:register:'.$identity);
+
+        $this->assertArrayHasKey('ip_hash', $payload);
+        $this->assertSame(
+            hash_hmac('sha256', '203.0.113.50', (string) config('app.key')),
+            $payload['ip_hash'],
+        );
+        $this->assertStringNotContainsString('203.0.113.50', json_encode($payload));
+
+        try {
+            $service->consume(CodeMode::Email, 'ip@example.com', '203.0.113.51', 'register', $code);
+            $this->fail('不同 IP 不得消费邮箱验证码');
+        } catch (BusinessRuleException $exception) {
+            $this->assertSame('EMAIL_CODE_INVALID', $exception->errorCode);
+        }
+
+        $payloadAfterMismatch = Cache::store('redis')->get('verification:EMAIL:register:'.$identity);
+        $this->assertSame(0, $payloadAfterMismatch['attempts']);
+        $service->consume(CodeMode::Email, 'ip@example.com', '203.0.113.50', 'register', $code);
+    }
+
+    public function test_register_and_reset_password_purposes_cannot_share_an_email_code(): void
+    {
+        $service = app(VerificationCodeService::class);
+        $service->send(CodeMode::Email, 'purpose@example.com', '203.0.113.52', 'register', 'REGISTER_EMAIL');
+        $code = $this->fake->lastCode('purpose@example.com');
+
+        try {
+            $service->consume(CodeMode::Email, 'purpose@example.com', '203.0.113.52', 'reset_password', $code);
+            $this->fail('注册邮箱验证码不得用于重置密码');
+        } catch (BusinessRuleException $exception) {
+            $this->assertSame('EMAIL_CODE_EXPIRED', $exception->errorCode);
+        }
+
+        $service->consume(CodeMode::Email, 'purpose@example.com', '203.0.113.52', 'register', $code);
+    }
+
+    public function test_email_lock_contention_maps_to_a_stable_busy_error(): void
+    {
+        $service = app(VerificationCodeService::class);
+        $service->send(CodeMode::Email, 'busy@example.com', '203.0.113.53', 'register', 'REGISTER_EMAIL');
+        $identity = hash_hmac('sha256', 'busy@example.com', (string) config('app.key'));
+        $lock = Cache::store('redis')->lock('verification:lock:verification:EMAIL:register:'.$identity, 5);
+        $this->assertTrue($lock->get());
+
+        try {
+            $service->consume(CodeMode::Email, 'busy@example.com', '203.0.113.53', 'register', '000000');
+            $this->fail('锁被占用时必须返回稳定忙错误');
+        } catch (BusinessRuleException $exception) {
+            $this->assertSame('EMAIL_CODE_BUSY', $exception->errorCode);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function test_missing_smtp_purges_a_stale_resolved_mailer_and_password(): void
+    {
+        config([
+            'mail.mailers.runtime_smtp' => [
+                'transport' => 'smtp',
+                'scheme' => 'smtp',
+                'host' => 'stale.test',
+                'port' => 587,
+                'username' => 'stale@example.com',
+                'password' => 'stale-password',
+            ],
+        ]);
+        $manager = app('mail.manager');
+        $manager->mailer('runtime_smtp');
+        Mail::fake();
+        SystemConfig::set(['mail_host' => '', 'mail_from_address' => '']);
+
+        try {
+            app(LaravelMailGateway::class)->send('owner@example.com', '123456', 'RESET_EMAIL');
+            $this->fail('缺少 SMTP 必须返回稳定错误');
+        } catch (BusinessRuleException $exception) {
+            $this->assertSame('EMAIL_NOT_CONFIGURED', $exception->errorCode);
+        }
+
+        $property = new \ReflectionProperty($manager, 'mailers');
+        $property->setAccessible(true);
+        $this->assertArrayNotHasKey('runtime_smtp', $property->getValue($manager));
+        $this->assertNull(config('mail.mailers.runtime_smtp.password'));
     }
 
     public function test_missing_smtp_returns_email_not_configured(): void

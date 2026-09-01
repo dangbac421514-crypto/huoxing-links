@@ -71,6 +71,33 @@ final class SmsVerificationTest extends TestCase
         }
     }
 
+    public function test_code_is_bound_to_the_sending_ip_without_exposing_the_ip(): void
+    {
+        $service = app(VerificationCodeService::class);
+        $service->send(CodeMode::SMS, '13800000012', '203.0.113.40', 'register', 'REGISTER_TEMPLATE');
+        $code = $this->fake->lastCode('13800000012');
+        $identity = hash_hmac('sha256', '13800000012', (string) config('app.key'));
+        $payload = Cache::store('redis')->get('verification:SMS:register:'.$identity);
+
+        $this->assertArrayHasKey('ip_hash', $payload);
+        $this->assertSame(
+            hash_hmac('sha256', '203.0.113.40', (string) config('app.key')),
+            $payload['ip_hash'],
+        );
+        $this->assertStringNotContainsString('203.0.113.40', json_encode($payload));
+
+        try {
+            $service->consume(CodeMode::SMS, '13800000012', '203.0.113.41', 'register', $code);
+            $this->fail('不同 IP 不得消费验证码');
+        } catch (BusinessRuleException $exception) {
+            $this->assertSame('SMS_CODE_INVALID', $exception->errorCode);
+        }
+
+        $payloadAfterMismatch = Cache::store('redis')->get('verification:SMS:register:'.$identity);
+        $this->assertSame(0, $payloadAfterMismatch['attempts']);
+        $service->consume(CodeMode::SMS, '13800000012', '203.0.113.40', 'register', $code);
+    }
+
     public function test_same_recipient_and_ip_is_rate_limited_without_real_http(): void
     {
         $service = app(VerificationCodeService::class);
@@ -110,6 +137,35 @@ final class SmsVerificationTest extends TestCase
         $this->assertCount(1, $this->fake->messages);
     }
 
+    public function test_provider_failure_cannot_delete_a_newer_throttle_owner(): void
+    {
+        $recipient = '13800000016';
+        $ip = '203.0.113.45';
+        $identity = hash_hmac('sha256', $recipient, (string) config('app.key'));
+        $ipHash = hash_hmac('sha256', $ip, (string) config('app.key'));
+        $throttleKey = 'verification:rate:SMS:register:'.$identity.':'.$ipHash;
+
+        $this->app->instance(SmsGateway::class, new class($throttleKey) implements SmsGateway
+        {
+            public function __construct(private string $throttleKey) {}
+
+            public function send(string $recipient, string $code, string $template): void
+            {
+                Redis::set($this->throttleKey, 'newer-owner', 'EX', 60);
+                throw new \RuntimeException('provider unavailable');
+            }
+        });
+
+        try {
+            app(VerificationCodeService::class)->send(CodeMode::SMS, $recipient, $ip, 'register', 'REGISTER_TEMPLATE');
+            $this->fail('发送失败必须返回稳定错误');
+        } catch (BusinessRuleException $exception) {
+            $this->assertSame('SMS_SEND_FAILED', $exception->errorCode);
+        }
+
+        $this->assertSame('newer-owner', Redis::get($throttleKey));
+    }
+
     public function test_wrong_code_is_limited_to_five_attempts_and_does_not_extend_expiry(): void
     {
         $service = app(VerificationCodeService::class);
@@ -139,6 +195,63 @@ final class SmsVerificationTest extends TestCase
         }
 
         $this->assertNull(Cache::store('redis')->get($key));
+    }
+
+    public function test_code_ttl_is_five_minutes_and_wrong_attempt_does_not_extend_redis_ttl(): void
+    {
+        $service = app(VerificationCodeService::class);
+        $service->send(CodeMode::SMS, '13800000013', '203.0.113.42', 'register', 'REGISTER_TEMPLATE');
+        $identity = hash_hmac('sha256', '13800000013', (string) config('app.key'));
+        $key = 'verification:SMS:register:'.$identity;
+        $store = Cache::store('redis')->getStore();
+        $redisKey = $store->getPrefix().$key;
+        $before = Redis::connection('cache')->ttl($redisKey);
+
+        $this->assertGreaterThanOrEqual(295, $before);
+        $this->assertLessThanOrEqual(300, $before);
+        try {
+            $service->consume(CodeMode::SMS, '13800000013', '203.0.113.42', 'register', '000000');
+        } catch (BusinessRuleException $exception) {
+            $this->assertSame('SMS_CODE_INVALID', $exception->errorCode);
+        }
+
+        $after = Redis::connection('cache')->ttl($redisKey);
+        $this->assertLessThanOrEqual($before, $after);
+        $this->assertGreaterThan(0, $after);
+    }
+
+    public function test_register_and_reset_password_purposes_cannot_share_a_code(): void
+    {
+        $service = app(VerificationCodeService::class);
+        $service->send(CodeMode::SMS, '13800000014', '203.0.113.43', 'register', 'REGISTER_TEMPLATE');
+        $code = $this->fake->lastCode('13800000014');
+
+        try {
+            $service->consume(CodeMode::SMS, '13800000014', '203.0.113.43', 'reset_password', $code);
+            $this->fail('注册验证码不得用于重置密码');
+        } catch (BusinessRuleException $exception) {
+            $this->assertSame('SMS_CODE_EXPIRED', $exception->errorCode);
+        }
+
+        $service->consume(CodeMode::SMS, '13800000014', '203.0.113.43', 'register', $code);
+    }
+
+    public function test_lock_contention_maps_to_a_stable_busy_error(): void
+    {
+        $service = app(VerificationCodeService::class);
+        $service->send(CodeMode::SMS, '13800000015', '203.0.113.44', 'register', 'REGISTER_TEMPLATE');
+        $identity = hash_hmac('sha256', '13800000015', (string) config('app.key'));
+        $lock = Cache::store('redis')->lock('verification:lock:verification:SMS:register:'.$identity, 5);
+        $this->assertTrue($lock->get());
+
+        try {
+            $service->consume(CodeMode::SMS, '13800000015', '203.0.113.44', 'register', '000000');
+            $this->fail('锁被占用时必须返回稳定忙错误');
+        } catch (BusinessRuleException $exception) {
+            $this->assertSame('SMS_CODE_BUSY', $exception->errorCode);
+        } finally {
+            $lock->release();
+        }
     }
 
     public function test_image_captcha_switch_controls_required_fields_and_consumes_once(): void

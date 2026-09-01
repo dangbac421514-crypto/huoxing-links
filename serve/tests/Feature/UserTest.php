@@ -37,7 +37,7 @@ final class UserTest extends TestCase
         app(VerificationCodeService::class)->send(
             CodeMode::SMS,
             $username,
-            '203.0.113.20',
+            '127.0.0.1',
             'register',
             'REGISTER_TEMPLATE',
         );

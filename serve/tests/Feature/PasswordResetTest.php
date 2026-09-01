@@ -39,7 +39,7 @@ final class PasswordResetTest extends TestCase
         app(VerificationCodeService::class)->send(
             CodeMode::SMS,
             $user->username,
-            '203.0.113.12',
+            '127.0.0.1',
             'reset_password',
             'RESET_TEMPLATE',
         );
@@ -78,7 +78,7 @@ final class PasswordResetTest extends TestCase
         app(VerificationCodeService::class)->send(
             CodeMode::Email,
             $user->username,
-            '203.0.113.13',
+            '127.0.0.1',
             'reset_password',
             'RESET_EMAIL',
         );
