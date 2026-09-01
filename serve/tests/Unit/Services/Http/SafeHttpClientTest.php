@@ -357,6 +357,27 @@ final class SafeHttpClientTest extends TestCase
         $this->assertSame(3, $observed['connect_timeout']);
         $this->assertSame(8, $observed['timeout']);
         $this->assertFalse($observed['allow_redirects']);
+        $this->assertTrue($observed['stream']);
+    }
+
+    public function test_safe_http_aborts_a_chunked_style_body_without_content_length_after_one_mebibyte(): void
+    {
+        $this->bindDns(['safe.example' => ['8.8.8.8']]);
+        Http::fake([
+            'https://safe.example/chunked-large' => Http::response(
+                str_repeat('x', 1048577),
+                200,
+                ['Transfer-Encoding' => 'chunked'],
+            ),
+        ]);
+
+        try {
+            app(SafeHttpClient::class)->getText('https://safe.example/chunked-large', ['safe.example']);
+            $this->fail('chunked-style oversized body was accepted');
+        } catch (UnsafeUrl $exception) {
+            $this->assertSame('UNSAFE_URL', $exception->errorCode);
+            $this->assertStringNotContainsString('xxxx', $exception->getMessage());
+        }
     }
 
     /** @param array<string, list<string>> $answers */

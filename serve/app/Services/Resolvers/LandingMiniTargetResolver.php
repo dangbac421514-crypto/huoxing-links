@@ -8,6 +8,8 @@ use App\DTO\VisitorContext;
 use App\Enums\LinkType;
 use App\Enums\MiniType;
 use App\Exceptions\LinkResolutionException;
+use App\Exceptions\MiniProgramForbidden;
+use App\Exceptions\QrUnavailable;
 use App\Models\Link;
 use App\Services\LandingSelectionStore;
 use App\Services\MiniProgramReferencePolicy;
@@ -96,6 +98,14 @@ final class LandingMiniTargetResolver implements TargetResolver
                 null,
                 $token,
             );
+        } catch (QrUnavailable|MiniProgramForbidden $exception) {
+            throw $exception;
+        } catch (LinkResolutionException $exception) {
+            if ($exception->errorCode === LinkError::VISITOR_TOKEN_KEY_INVALID) {
+                throw $exception;
+            }
+
+            throw new LinkResolutionException(LinkError::LANDING_MINI_EXTERNAL_ERROR, '落地小程序跳转暂不可用', 502);
         } catch (Throwable) {
             throw new LinkResolutionException(LinkError::LANDING_MINI_EXTERNAL_ERROR, '落地小程序跳转暂不可用', 502);
         }

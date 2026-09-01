@@ -93,6 +93,7 @@ final class SafeHttpClient
                 $response = Http::connectTimeout(3)
                     ->timeout(8)
                     ->withoutRedirecting()
+                    ->withOptions(['stream' => true])
                     ->get($url);
             } catch (ConnectionException|TransferException) {
                 if ($attempt < 2) {

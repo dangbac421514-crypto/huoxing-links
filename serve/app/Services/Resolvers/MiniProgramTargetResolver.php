@@ -7,6 +7,7 @@ use App\DTO\TargetResult;
 use App\DTO\VisitorContext;
 use App\Enums\LinkType;
 use App\Exceptions\LinkResolutionException;
+use App\Exceptions\MiniProgramForbidden;
 use App\Models\Link;
 use App\Services\MiniProgramReferencePolicy;
 use App\Services\WeixinSchemePolicy;
@@ -51,6 +52,8 @@ final class MiniProgramTargetResolver implements TargetResolver
             $target = $this->schemePolicy->assert($this->schemes->generate($mini, $path, $query));
 
             return $this->result($link, $target);
+        } catch (MiniProgramForbidden $exception) {
+            throw $exception;
         } catch (Throwable) {
             throw new LinkResolutionException(LinkError::MINI_PROGRAM_EXTERNAL_ERROR, '小程序跳转暂不可用', 502);
         }

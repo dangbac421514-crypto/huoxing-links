@@ -5,6 +5,7 @@ namespace App\Services;
 use App\DTO\VisitorTokenPayload;
 use App\Exceptions\InvalidVisitorToken;
 use App\Exceptions\LinkResolutionException;
+use App\Support\LinkError;
 use Carbon\CarbonImmutable;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Str;
@@ -74,7 +75,7 @@ final class VisitorTokenService
         $encoded = config('app.visitor_token_key');
         $key = is_string($encoded) ? base64_decode($encoded, true) : false;
         if ($key === false || strlen($key) !== 32) {
-            throw new LinkResolutionException('VISITOR_TOKEN_KEY_INVALID', 'Visitor token configuration is invalid.');
+            throw new LinkResolutionException(LinkError::VISITOR_TOKEN_KEY_INVALID, 'Visitor token configuration is invalid.');
         }
 
         return new Encrypter($key, 'aes-256-gcm');
@@ -82,6 +83,6 @@ final class VisitorTokenService
 
     private function invalid(): InvalidVisitorToken
     {
-        return new InvalidVisitorToken('VISITOR_TOKEN_INVALID', 'Invalid visitor token');
+        return new InvalidVisitorToken(LinkError::VISITOR_TOKEN_INVALID, 'Invalid visitor token');
     }
 }

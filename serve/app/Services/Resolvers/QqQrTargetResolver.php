@@ -52,11 +52,11 @@ final class QqQrTargetResolver implements TargetResolver
                 $html = str_replace('\\/', '/', $html);
             }
             $matches = [];
-            preg_match_all('#(?<![A-Za-z0-9])weixin://dl/business/\?t=([A-Za-z0-9._~+/%=-]+)(?![A-Za-z0-9._~+/%=-])#', $html, $matches);
-            if (count($matches[0] ?? []) !== 1 || ! isset($matches[1][0]) || $matches[1][0] === '') {
+            preg_match_all('#(?<![A-Za-z0-9])weixin://dl/business/\?([^"\'<>\s]+)#', $html, $matches);
+            if (count($matches[0] ?? []) !== 1 || ! isset($matches[1][0]) || preg_match('/^t=[A-Za-z0-9._~+\/%=-]+$/D', $matches[1][0]) !== 1) {
                 throw new \RuntimeException('QQ QR scheme count is invalid');
             }
-            $target = $this->schemePolicy->assert('weixin://dl/business/?t='.$matches[1][0]);
+            $target = $this->schemePolicy->assert('weixin://dl/business/?'.$matches[1][0]);
 
             return new TargetResult(
                 (string) $link->getAttribute('title'),

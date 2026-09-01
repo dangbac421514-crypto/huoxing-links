@@ -9,8 +9,11 @@ use App\DTO\VisitorContext;
 use App\Enums\LinkType;
 use App\Enums\MiniType;
 use App\Exceptions\LinkResolutionException;
+use App\Exceptions\MiniProgramForbidden;
+use App\Exceptions\QrUnavailable;
 use App\Models\Link;
 use App\Models\MiniProgram;
+use App\Services\EasyWechatMiniProgramSchemeClient;
 use App\Services\EasyWechatMiniProgramSchemeGenerator;
 use App\Services\Resolvers\CliQrTargetResolver;
 use App\Services\Resolvers\KingDocTargetResolver;
@@ -23,6 +26,9 @@ use App\Services\Resolvers\WorkWechatTargetResolver;
 use App\Services\WeixinSchemePolicy;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Str;
+use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
 use Tests\Concerns\CreatesLinkFixtures;
 use Tests\TestCase;
 
@@ -341,12 +347,50 @@ final class TargetResolverTest extends TestCase
                 new VisitorContext('visitor-server-id', 'visitor-hash'),
             );
             $this->fail('QR exhaustion was accepted');
-        } catch (LinkResolutionException $exception) {
-            $this->assertSame('LANDING_MINI_EXTERNAL_ERROR', $exception->errorCode);
+        } catch (QrUnavailable $exception) {
+            $this->assertSame('QR_UNAVAILABLE', $exception->errorCode);
         }
 
         $this->assertNull($generator->path);
         $this->assertNull($generator->query);
+    }
+
+    public function test_regular_mini_resolver_preserves_cross_tenant_mini_forbidden_error(): void
+    {
+        $link = $this->miniProgramLink();
+        $other = $this->activeMemberWithUvLimit(10);
+        $otherMini = $this->miniProgramFor($other);
+        $config = $link->config;
+        $config['min_id'] = $otherMini->id;
+        $link->config = $config;
+        $link->save();
+
+        try {
+            app(MiniProgramTargetResolver::class)->resolve($link->fresh(), VisitorContext::anonymous());
+            $this->fail('cross-tenant mini reference was accepted');
+        } catch (MiniProgramForbidden $exception) {
+            $this->assertSame('MINI_PROGRAM_FORBIDDEN', $exception->errorCode);
+        }
+    }
+
+    public function test_landing_resolver_preserves_token_key_configuration_error(): void
+    {
+        $link = $this->landingLinkWithQrs([
+            ['sort' => 1, 'path' => 'qr.png', 'uv_limit_num' => 2],
+        ]);
+        $mini = MiniProgram::query()->findOrFail(data_get($link->config, 'min_id'));
+        $mini->update(['is_pre_min' => true, 'type' => MiniType::LANDING]);
+        config(['app.visitor_token_key' => 'not-valid-base64-key']);
+
+        try {
+            app(LandingMiniTargetResolver::class)->resolve(
+                $link->fresh(),
+                new VisitorContext('visitor-server-id', 'visitor-hash'),
+            );
+            $this->fail('invalid visitor token key was accepted');
+        } catch (LinkResolutionException $exception) {
+            $this->assertSame('VISITOR_TOKEN_KEY_INVALID', $exception->errorCode);
+        }
     }
 
     public function test_qq_qr_resolver_rejects_multiple_schemes_without_leaking_html(): void
@@ -404,6 +448,45 @@ final class TargetResolverTest extends TestCase
         $result = app(QqQrTargetResolver::class)->resolve($link, VisitorContext::anonymous());
 
         $this->assertSame('weixin://dl/business/?t=json-token', $result->target);
+    }
+
+    public function test_qq_qr_resolver_rejects_extra_query_parameters_after_t(): void
+    {
+        $link = $this->linkForType(LinkType::QR_QQ, ['url' => 'https://ym.link/path']);
+        Http::fake(['https://ym.link/path' => Http::response('weixin://dl/business/?t=token&extra=x', 200)]);
+
+        try {
+            app(QqQrTargetResolver::class)->resolve($link, VisitorContext::anonymous());
+            $this->fail('QQ QR scheme with extra query parameters was accepted');
+        } catch (LinkResolutionException $exception) {
+            $this->assertSame('QQ_QR_EXTERNAL_ERROR', $exception->errorCode);
+        }
+    }
+
+    public function test_qq_qr_resolver_rejects_duplicate_t_query_parameters(): void
+    {
+        $link = $this->linkForType(LinkType::QR_QQ, ['url' => 'https://ym.link/path']);
+        Http::fake(['https://ym.link/path' => Http::response('weixin://dl/business/?t=one&t=two', 200)]);
+
+        try {
+            app(QqQrTargetResolver::class)->resolve($link, VisitorContext::anonymous());
+            $this->fail('QQ QR scheme with duplicate t parameters was accepted');
+        } catch (LinkResolutionException $exception) {
+            $this->assertSame('QQ_QR_EXTERNAL_ERROR', $exception->errorCode);
+        }
+    }
+
+    public function test_qq_qr_resolver_rejects_an_incomplete_query_delimiter(): void
+    {
+        $link = $this->linkForType(LinkType::QR_QQ, ['url' => 'https://ym.link/path']);
+        Http::fake(['https://ym.link/path' => Http::response('weixin://dl/business/?t=token&', 200)]);
+
+        try {
+            app(QqQrTargetResolver::class)->resolve($link, VisitorContext::anonymous());
+            $this->fail('incomplete QQ QR query was accepted');
+        } catch (LinkResolutionException $exception) {
+            $this->assertSame('QQ_QR_EXTERNAL_ERROR', $exception->errorCode);
+        }
     }
 
     public function test_easywechat_adapter_uses_injected_fake_client_and_returns_only_openlink(): void
@@ -478,6 +561,72 @@ final class TargetResolverTest extends TestCase
             $this->assertSame('MINI_PROGRAM_EXTERNAL_ERROR', $exception->errorCode);
             $this->assertStringNotContainsString('evil.example', $exception->getMessage());
         }
+    }
+
+    public function test_easywechat_transport_uses_mock_http_with_access_token_and_safe_options(): void
+    {
+        $requests = [];
+        $transport = new MockHttpClient(function (string $method, string $url, array $options) use (&$requests): MockResponse {
+            $requests[] = [$method, $url, $options];
+            if (str_contains($url, 'cgi-bin/token')) {
+                return new MockResponse(
+                    json_encode(['access_token' => 'fake-access-token', 'expires_in' => 7200], JSON_THROW_ON_ERROR),
+                    ['http_code' => 200, 'response_headers' => ['content-type' => 'application/json']],
+                );
+            }
+
+            return new MockResponse(
+                json_encode(['openlink' => 'weixin://dl/business/?t=transport-token'], JSON_THROW_ON_ERROR),
+                ['http_code' => 200, 'response_headers' => ['content-type' => 'application/json']],
+            );
+        });
+        $client = new EasyWechatMiniProgramSchemeClient($transport);
+
+        $appId = 'wx'.Str::lower(Str::random(16));
+        $result = $client->generate($appId, 'transport-secret', 'pages/index/index', 'code=abc');
+
+        $this->assertSame(['openlink' => 'weixin://dl/business/?t=transport-token'], $result);
+        $this->assertCount(2, $requests);
+        [$method, $url, $options] = $requests[1];
+        $this->assertSame('POST', $method);
+        $this->assertStringContainsString('wxa/generatescheme', $url);
+        $this->assertSame(3.0, $options['timeout']);
+        $this->assertSame(3.0, $options['max_connect_duration']);
+        $this->assertSame(8.0, $options['max_duration']);
+        $this->assertSame('fake-access-token', $options['query']['access_token']);
+        $this->assertStringNotContainsString('transport-secret', json_encode($result, JSON_THROW_ON_ERROR));
+    }
+
+    public function test_easywechat_transport_retries_two_server_failures_and_maps_provider_error_safely(): void
+    {
+        $attempts = 0;
+        $transport = new MockHttpClient(function (string $method, string $url, array $options) use (&$attempts): MockResponse {
+            if (str_contains($url, 'cgi-bin/token')) {
+                return new MockResponse(
+                    json_encode(['access_token' => 'fake-access-token', 'expires_in' => 7200], JSON_THROW_ON_ERROR),
+                    ['http_code' => 200, 'response_headers' => ['content-type' => 'application/json']],
+                );
+            }
+            $attempts++;
+            if ($attempts <= 2) {
+                return new MockResponse('', ['http_code' => 503]);
+            }
+
+            return new MockResponse(
+                json_encode(['errcode' => 40001, 'errmsg' => 'provider-secret-must-not-leak'], JSON_THROW_ON_ERROR),
+                ['http_code' => 200, 'response_headers' => ['content-type' => 'application/json']],
+            );
+        });
+        $client = new EasyWechatMiniProgramSchemeClient($transport);
+
+        try {
+            $client->generate('wxtransportretry1', 'transport-secret', 'pages/index/index', 'code=abc');
+            $this->fail('provider error was accepted');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Mini program provider request failed', $exception->getMessage());
+            $this->assertStringNotContainsString('provider-secret', $exception->getMessage());
+        }
+        $this->assertSame(3, $attempts);
     }
 
     /** @return array<string, string> */

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\DTO\VisitorIdentity;
 use App\Exceptions\LinkResolutionException;
+use App\Support\LinkError;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Str;
@@ -33,7 +34,7 @@ final class VisitorIdentityService
     public function cookie(VisitorIdentity $identity): SymfonyCookie
     {
         if (! Str::isUuid($identity->visitorId)) {
-            throw new LinkResolutionException('VISITOR_ID_INVALID', 'Visitor identity is invalid.');
+            throw new LinkResolutionException(LinkError::VISITOR_ID_INVALID, 'Visitor identity is invalid.');
         }
 
         return Cookie::make(
@@ -54,7 +55,7 @@ final class VisitorIdentityService
         $key = config('app.visitor_hash_key');
         if (! is_string($key) || $key === '' || strlen($key) < 32) {
             throw new LinkResolutionException(
-                'VISITOR_HASH_KEY_INVALID',
+                LinkError::VISITOR_HASH_KEY_INVALID,
                 'Visitor hash configuration is invalid.',
             );
         }
