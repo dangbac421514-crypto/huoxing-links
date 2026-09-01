@@ -4,9 +4,11 @@ namespace Tests\Feature;
 
 use App\Enums\LinkType;
 use App\Models\Link;
-use App\Models\User;
+use App\Services\QrRotationService;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Redis;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\CreatesLinkFixtures;
 use Tests\TestCase;
@@ -20,6 +22,13 @@ final class LinkCrudTest extends TestCase
         parent::setUp();
         Config::set('app.public_origin', 'https://short.example');
         Config::set('app.allowed_share_hosts', ['short.example']);
+        Redis::connection('default')->flushdb();
+    }
+
+    protected function tearDown(): void
+    {
+        Redis::connection('default')->flushdb();
+        parent::tearDown();
     }
 
     public function test_create_list_and_detail_expose_permanent_status_and_canonical_share_url(): void
@@ -163,5 +172,124 @@ final class LinkCrudTest extends TestCase
         $payload['config']['min_id'] = $official->id;
         $this->putJson('/api/links/'.$link->id, $payload)->assertOk();
         $this->assertSame($official->id, $link->fresh()->config['min_id']);
+    }
+
+    public function test_landing_qr_input_is_hardened_and_visit_uv_is_normalized_on_create_and_update(): void
+    {
+        $owner = $this->activeMemberWithUvLimit(10);
+        $mini = $this->miniProgramFor($owner);
+        Sanctum::actingAs($owner, ['*'], 'api');
+        $payload = [
+            'type' => LinkType::LANDING_MINI->value,
+            'icon' => '/icon.png',
+            'config' => [
+                'min_id' => $mini->id,
+                'wx' => [
+                    'avatar' => '/avatar.png',
+                    'title' => 'Landing title',
+                    'sub_title' => 'Landing subtitle',
+                    'qr' => [[
+                        'sort' => 0,
+                        'path' => 'qr.png',
+                        'name' => 'first',
+                        'uv_limit_num' => null,
+                        'expired_at' => null,
+                        'visit_uv' => 'attacker-controlled',
+                    ]],
+                    'switch_type' => 1,
+                    'uv_limit_type' => 1,
+                ],
+            ],
+        ];
+
+        $created = $this->postJson('/api/links', $payload)->assertCreated();
+        $link = Link::query()->findOrFail($created->json('id'));
+        $this->assertSame(0, $link->config['wx']['qr'][0]['visit_uv']);
+
+        $payload['config']['wx']['qr'][0]['visit_uv'] = 12345;
+        $this->putJson('/api/links/'.$link->id, $payload)->assertOk();
+        $this->assertSame(0, $link->fresh()->config['wx']['qr'][0]['visit_uv']);
+    }
+
+    public function test_landing_qr_validation_rejects_empty_duplicate_and_invalid_fields(): void
+    {
+        $owner = $this->activeMemberWithUvLimit(10);
+        $mini = $this->miniProgramFor($owner);
+        Sanctum::actingAs($owner, ['*'], 'api');
+        $base = [
+            'type' => LinkType::LANDING_MINI->value,
+            'icon' => '/icon.png',
+            'config' => [
+                'min_id' => $mini->id,
+                'wx' => [
+                    'title' => 'Title',
+                    'sub_title' => 'Subtitle',
+                    'qr' => [[
+                        'sort' => 0,
+                        'path' => 'qr.png',
+                        'name' => 'first',
+                        'uv_limit_num' => 1,
+                        'expired_at' => null,
+                    ]],
+                    'switch_type' => 1,
+                    'uv_limit_type' => 1,
+                ],
+            ],
+        ];
+
+        $empty = $base;
+        $empty['config']['wx']['qr'] = [];
+        $this->postJson('/api/links', $empty)->assertStatus(422);
+
+        $duplicate = $base;
+        $duplicate['config']['wx']['qr'][] = [
+            'sort' => 0,
+            'path' => 'second.png',
+            'name' => 'second',
+            'uv_limit_num' => 1,
+            'expired_at' => null,
+        ];
+        $this->postJson('/api/links', $duplicate)->assertStatus(422);
+
+        $badLimit = $base;
+        $badLimit['config']['wx']['qr'][0]['uv_limit_num'] = 0;
+        $this->postJson('/api/links', $badLimit)->assertStatus(422);
+
+        $badExpiry = $base;
+        $badExpiry['config']['wx']['qr'][0]['expired_at'] = '2026-9-02';
+        $this->postJson('/api/links', $badExpiry)->assertStatus(422);
+
+        $badCandidate = $base;
+        $badCandidate['config']['wx']['qr'] = ['not-an-array'];
+        $this->postJson('/api/links', $badCandidate)->assertStatus(422);
+    }
+
+    public function test_landing_delete_forgets_only_its_cumulative_qr_keys_and_keeps_foreign_and_daily_state(): void
+    {
+        $link = $this->landingLinkWithQrs([
+            ['sort' => 1, 'path' => 'persistent.png', 'uv_limit_num' => 3],
+        ]);
+        $service = app(QrRotationService::class);
+        $service->reserve($link, CarbonImmutable::parse('2026-09-02 12:00:00', 'Asia/Shanghai'));
+        $counterKey = 'link:qr:'.$link->id.':accumulate';
+        $cursorKey = 'link:qr:'.$link->id.':cursor:accumulate';
+        $dailyKey = 'link:qr:'.$link->id.':daily:20260902';
+        Redis::connection('default')->hset($dailyKey, '1', 7);
+        Redis::connection('default')->expire($dailyKey, 172800);
+
+        $foreign = $this->activeMemberWithUvLimit(10);
+        Sanctum::actingAs($foreign, ['*'], 'api');
+        $this->deleteJson('/api/links/'.$link->id)->assertNoContent();
+        $this->assertDatabaseHas('links', ['id' => $link->id]);
+        $this->assertSame('1', (string) Redis::connection('default')->hget($counterKey, '1'));
+        $this->assertSame('0', (string) Redis::connection('default')->get($cursorKey));
+
+        Sanctum::actingAs($link->user, ['*'], 'api');
+        $this->deleteJson('/api/links/'.$link->id)->assertNoContent();
+        $this->assertDatabaseMissing('links', ['id' => $link->id]);
+        $this->assertSame(0, Redis::connection('default')->exists($counterKey));
+        $this->assertSame(0, Redis::connection('default')->exists($cursorKey));
+        $this->assertSame('7', (string) Redis::connection('default')->hget($dailyKey, '1'));
+        $this->assertGreaterThan(0, Redis::connection('default')->ttl($dailyKey));
     }
 }

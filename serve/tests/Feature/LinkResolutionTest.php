@@ -2,13 +2,17 @@
 
 namespace Tests\Feature;
 
+use App\Enums\LinkType;
 use App\Exceptions\BusinessRuleException;
+use App\Exceptions\QrUnavailable;
 use App\Models\Link;
 use App\Models\LinkVisitLog;
 use App\Models\UsagePeriod;
+use App\Services\QrRotationService;
 use App\Services\UsageMeter;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\Concerns\CreatesLinkFixtures;
@@ -17,6 +21,18 @@ use Tests\TestCase;
 final class LinkResolutionTest extends TestCase
 {
     use CreatesLinkFixtures;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Redis::connection('default')->flushdb();
+    }
+
+    protected function tearDown(): void
+    {
+        Redis::connection('default')->flushdb();
+        parent::tearDown();
+    }
 
     public function test_schema_keeps_links_without_an_expiry_gate_and_sanitizes_visit_logs(): void
     {
@@ -128,5 +144,46 @@ final class LinkResolutionTest extends TestCase
             'usage_period_id' => $period->id,
             'visitor_hash' => hash('sha256', $otherVisitorId),
         ]);
+    }
+
+    public function test_rotation_feature_path_returns_sort_zero_and_ignores_display_visit_uv(): void
+    {
+        $link = $this->landingLinkWithQrs([
+            [
+                'sort' => 0,
+                'path' => 'feature-zero.png',
+                'name' => 'feature-zero',
+                'visit_uv' => 999,
+                'uv_limit_num' => 1,
+            ],
+        ]);
+
+        $selection = app(QrRotationService::class)->reserve(
+            $link,
+            CarbonImmutable::parse('2026-09-02 12:00:00', 'Asia/Shanghai'),
+        );
+
+        $this->assertSame(0, $selection->sort);
+        $this->assertSame('feature-zero.png', $selection->path);
+        $this->assertSame('1', (string) Redis::connection('default')->hget('link:qr:'.$link->id.':accumulate', '0'));
+    }
+
+    public function test_rotation_feature_path_maps_invalid_persisted_qr_config_to_stable_error(): void
+    {
+        $link = $this->linkForType(LinkType::LANDING_MINI, [
+            'wx' => [
+                'qr' => [['sort' => 1, 'path' => 'unsafe.png', 'uv_limit_num' => 'not-a-number']],
+                'switch_type' => 1,
+                'uv_limit_type' => 1,
+            ],
+        ]);
+
+        try {
+            app(QrRotationService::class)->reserve($link, CarbonImmutable::parse('2026-09-02 12:00:00', 'Asia/Shanghai'));
+            $this->fail('invalid persisted QR config must fail closed');
+        } catch (QrUnavailable $exception) {
+            $this->assertSame('QR_UNAVAILABLE', $exception->errorCode);
+            $this->assertStringNotContainsString('not-a-number', $exception->getMessage());
+        }
     }
 }

@@ -14,6 +14,7 @@ use App\Services\EntitlementService;
 use App\Services\LinkAccessPolicy;
 use App\Services\LinkShareUrl;
 use App\Services\MiniProgramReferencePolicy;
+use App\Services\QrRotationService;
 use App\Support\LinkError;
 use App\Support\LinkTypeParser;
 use Carbon\CarbonImmutable;
@@ -118,23 +119,36 @@ class LinkController extends FormController
         });
 
         $form->saving(function (FormService $form) use ($actor): void {
-            if (! $form->isCreate()) {
-                return;
+            $type = LinkTypeParser::parse(
+                $form->safeFormData['type'] ?? $form->getModel()->getRawOriginal('type'),
+            );
+
+            if ($type === LinkType::LANDING_MINI) {
+                $config = $form->safeFormData['config'] ?? null;
+                if (is_array($config) && isset($config['wx']) && is_array($config['wx'])) {
+                    if (isset($config['wx']['qr']) && is_array($config['wx']['qr'])) {
+                        foreach ($config['wx']['qr'] as $index => $item) {
+                            if (is_array($item)) {
+                                $config['wx']['qr'][$index]['visit_uv'] = 0;
+                            }
+                        }
+                    }
+                    $form->safeFormData['config'] = $config;
+                }
+
+                if ($form->isCreate()) {
+                    $wx = is_array($config['wx'] ?? null) ? $config['wx'] : [];
+                    $form->safeFormData['title'] = $wx['title'] ?? '';
+                    $form->safeFormData['description'] = $wx['sub_title'] ?? '';
+                }
             }
 
-            $form->safeFormData['status'] = 1;
-            $form->safeFormData['manual_status'] = 1;
-            $form->safeFormData['health_status'] = 1;
-            $form->safeFormData['expired_at'] = null;
-            $form->safeFormData['user_id'] = $actor->id;
-
-            if ((int) $form->safeFormData['type'] === LinkType::LANDING_MINI->value) {
-                foreach ($form->safeFormData['config']['wx']['qr'] as &$item) {
-                    $item['visit_uv'] = 0;
-                }
-                unset($item);
-                $form->safeFormData['title'] = $form->safeFormData['config']['wx']['title'] ?? '';
-                $form->safeFormData['description'] = $form->safeFormData['config']['wx']['sub_title'] ?? '';
+            if ($form->isCreate()) {
+                $form->safeFormData['status'] = 1;
+                $form->safeFormData['manual_status'] = 1;
+                $form->safeFormData['health_status'] = 1;
+                $form->safeFormData['expired_at'] = null;
+                $form->safeFormData['user_id'] = $actor->id;
             }
         });
 
@@ -182,6 +196,9 @@ class LinkController extends FormController
             return response()->json(null, Response::HTTP_NO_CONTENT);
         }
 
+        if (LinkTypeParser::parse($link->getRawOriginal('type')) === LinkType::LANDING_MINI) {
+            app(QrRotationService::class)->forget($link);
+        }
         $link->delete();
 
         return response()->json(null, Response::HTTP_NO_CONTENT);
@@ -269,11 +286,14 @@ class LinkController extends FormController
             'config.wx.avatar' => 'nullable|string',
             'config.wx.title' => 'nullable|string',
             'config.wx.sub_title' => 'nullable|string',
-            'config.wx.qr' => 'required|array',
-            'config.wx.qr.*.sort' => 'required|integer|min:0|max:200',
-            'config.wx.qr.*.name' => 'required|string',
-            'config.wx.qr.*.path' => 'required|string',
-            'config.wx.qr.*.uv_limit_num' => 'nullable',
+            'config.wx.qr' => ['required', 'array', 'min:1'],
+            'config.wx.qr.*' => ['required', 'array'],
+            'config.wx.qr.*.sort' => ['required', 'integer', 'min:0', 'max:200', 'distinct'],
+            'config.wx.qr.*.name' => ['nullable', 'string'],
+            'config.wx.qr.*.path' => ['required', 'string'],
+            'config.wx.qr.*.uv_limit_num' => ['nullable', 'integer', 'min:1'],
+            // This is display-only legacy data. Accept it for client
+            // compatibility, then overwrite it to zero in the saving hook.
             'config.wx.qr.*.visit_uv' => 'nullable',
             'config.wx.qr.*.expired_at' => 'nullable|date_format:Y-m-d',
             'config.wx.switch_type' => ['required', new Enum(SwitchType::class)],

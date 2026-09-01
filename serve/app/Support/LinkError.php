@@ -5,13 +5,24 @@ namespace App\Support;
 final class LinkError
 {
     public const LINK_NOT_FOUND = 'LINK_NOT_FOUND';
+
     public const LINK_DISABLED = 'LINK_DISABLED';
+
     public const USER_DISABLED = 'USER_DISABLED';
+
     public const MEMBERSHIP_EXPIRED = 'MEMBERSHIP_EXPIRED';
+
     public const QUOTA_EXCEEDED = 'QUOTA_EXCEEDED';
+
     public const MINI_PROGRAM_FORBIDDEN = 'MINI_PROGRAM_FORBIDDEN';
+
     public const SHARE_ORIGIN_UNAVAILABLE = 'SHARE_ORIGIN_UNAVAILABLE';
+
     public const LINK_TYPE_FORBIDDEN = 'LINK_TYPE_FORBIDDEN';
+
     public const LINK_TYPE_UNSUPPORTED = 'LINK_TYPE_UNSUPPORTED';
+
     public const VISITOR_TOKEN_INVALID = 'VISITOR_TOKEN_INVALID';
+
+    public const QR_UNAVAILABLE = 'QR_UNAVAILABLE';
 }
