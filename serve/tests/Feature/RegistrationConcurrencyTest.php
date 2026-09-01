@@ -25,6 +25,8 @@ final class RegistrationConcurrencyTest extends BaseTestCase
     {
         Date::setTestNow();
         $this->artisan('migrate:fresh', ['--seed' => true, '--force' => true])->run();
+        $this->assertSame(0, User::query()->count(), '并发注册测试不得遗留用户');
+        $this->assertSame(0, VipLogs::query()->count(), '并发注册测试不得遗留会员流水');
         parent::tearDown();
     }
 

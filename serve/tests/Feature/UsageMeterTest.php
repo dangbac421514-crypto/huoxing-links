@@ -81,6 +81,20 @@ final class UsageMeterTest extends TestCase
         app(UsageMeter::class)->consume($member, '', $this->at());
     }
 
+    public function test_empty_visitor_id_is_rejected_for_admin_without_usage_rows(): void
+    {
+        $admin = User::factory()->create(['type' => 3]);
+
+        try {
+            app(UsageMeter::class)->consume($admin, '', $this->at());
+            $this->fail('管理员也不能使用空访客标识');
+        } catch (BusinessRuleException $exception) {
+            $this->assertSame('INVALID_VISITOR', $exception->errorCode);
+        }
+
+        $this->assertDatabaseCount('usage_periods', 0);
+    }
+
     public function test_admin_does_not_create_usage_rows(): void
     {
         $admin = User::factory()->create(['type' => 3]);

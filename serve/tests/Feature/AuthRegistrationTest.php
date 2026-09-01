@@ -36,9 +36,15 @@ final class AuthRegistrationTest extends TestCase
         SystemConfig::set([
             'send_code_mode' => (string) CodeMode::SMS->value,
             'verify_code_is_open' => '0',
+            'is_give_vip' => '0',
         ]);
         $this->sms = new FakeSmsGateway;
         $this->app->instance(SmsGateway::class, $this->sms);
+    }
+
+    public function test_registration_fixture_starts_with_trial_disabled(): void
+    {
+        $this->assertSame('0', (string) SystemConfig::get('is_give_vip'));
     }
 
     public function test_registration_binds_a_valid_referral_code_without_creating_commission_rows(): void

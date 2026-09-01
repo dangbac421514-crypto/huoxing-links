@@ -46,12 +46,12 @@ final class EntitlementService
             ? $user->getRelation('vipPackage')
             : VipPackage::query()->find($user->vip_id);
         if (! $package instanceof VipPackage) {
-            return $this->none();
+            throw $this->noEntitlement();
         }
 
         $config = $package->config;
         if (! $this->isValidConfig($config)) {
-            return $this->none();
+            throw $this->noEntitlement();
         }
 
         // Membership timestamps are legacy MySQL wall-clock values. Read the
@@ -65,10 +65,10 @@ final class EntitlementService
         }
 
         // A future start is not an active entitlement. MembershipService does
-        // not create such a projection, but treating it as NONE keeps reads
-        // and usage accounting safe if legacy data contains one.
+        // not create such a projection; a complete but malformed time window
+        // must not be mistaken for an account with no membership tuple.
         if ($start->gt($at)) {
-            return $this->none();
+            throw $this->noEntitlement();
         }
 
         $allowTypes = [];
@@ -110,6 +110,11 @@ final class EntitlementService
         return new EntitlementSnapshot(MembershipState::NONE, null, null, 0, 0, 0, []);
     }
 
+    private function noEntitlement(): BusinessRuleException
+    {
+        return new BusinessRuleException('NO_ENTITLEMENT', '套餐权益配置无效');
+    }
+
     private function isAdmin(User $user): bool
     {
         $type = $user->getAttribute('type');
@@ -145,7 +150,13 @@ final class EntitlementService
         }
 
         $allowType = $config['allow_type'] ?? null;
-        if (! is_array($allowType) || array_diff(LinkType::getAllType(), array_keys($allowType)) !== []) {
+        $expectedTypes = LinkType::getAllType();
+        if (
+            ! is_array($allowType)
+            || count($allowType) !== count($expectedTypes)
+            || array_diff($expectedTypes, array_keys($allowType)) !== []
+            || array_diff(array_keys($allowType), $expectedTypes) !== []
+        ) {
             return false;
         }
         foreach ($allowType as $enabled) {

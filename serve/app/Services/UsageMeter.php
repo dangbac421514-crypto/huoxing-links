@@ -17,11 +17,11 @@ final class UsageMeter
     public function consume(User $user, string $visitorId, CarbonImmutable $at): void
     {
         $snapshot = $this->entitlements->assertActive($user, $at);
-        if ($snapshot->state === MembershipState::ADMIN) {
-            return;
-        }
         if ($visitorId === '') {
             throw new BusinessRuleException('INVALID_VISITOR', '访客标识不能为空');
+        }
+        if ($snapshot->state === MembershipState::ADMIN) {
+            return;
         }
         if ($snapshot->period === null) {
             throw new BusinessRuleException('NO_ENTITLEMENT', '当前账号没有有效会员权益');

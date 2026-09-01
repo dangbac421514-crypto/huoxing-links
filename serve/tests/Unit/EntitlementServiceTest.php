@@ -126,9 +126,8 @@ final class EntitlementServiceTest extends TestCase
             'start_at' => CarbonImmutable::parse('2026-09-15 10:00:00', 'Asia/Shanghai'),
             'end_at' => CarbonImmutable::parse('2026-10-15 10:00:00', 'Asia/Shanghai'),
         ]);
-        $this->assertSame(MembershipState::NONE, $service->resolve($missingPackage, $at)->state);
         try {
-            $service->assertActive($missingPackage, $at);
+            $service->resolve($missingPackage, $at);
             $this->fail('缺失套餐必须被拒绝');
         } catch (BusinessRuleException $exception) {
             $this->assertSame('NO_ENTITLEMENT', $exception->errorCode);
@@ -145,13 +144,62 @@ final class EntitlementServiceTest extends TestCase
             'start_at' => CarbonImmutable::parse('2026-09-15 10:00:00', 'Asia/Shanghai'),
             'end_at' => CarbonImmutable::parse('2026-10-15 10:00:00', 'Asia/Shanghai'),
         ]);
-        $this->assertSame(MembershipState::NONE, $service->resolve($malformedUser, $at)->state);
         try {
-            $service->assertActive($malformedUser, $at);
+            $service->resolve($malformedUser, $at);
             $this->fail('格式错误的套餐必须被拒绝');
         } catch (BusinessRuleException $exception) {
             $this->assertSame('NO_ENTITLEMENT', $exception->errorCode);
         }
+    }
+
+    public function test_present_membership_with_missing_package_throws_from_resolve(): void
+    {
+        $member = User::factory()->create([
+            'vip_id' => 999999,
+            'start_at' => '2026-09-15 10:00:00',
+            'end_at' => '2026-10-15 10:00:00',
+        ]);
+
+        try {
+            app(EntitlementService::class)->resolve($member, $this->at());
+            $this->fail('缺失套餐必须由 resolve 直接拒绝');
+        } catch (BusinessRuleException $exception) {
+            $this->assertSame('NO_ENTITLEMENT', $exception->errorCode);
+        }
+    }
+
+    public function test_allow_type_with_an_extra_key_is_not_an_entitlement(): void
+    {
+        $package = VipPackage::query()->findOrFail(2);
+        $config = $package->config;
+        $config['allow_type']['UNKNOWN_LINK'] = true;
+        $package->update(['config' => $config]);
+        $member = User::factory()->create([
+            'vip_id' => $package->id,
+            'start_at' => '2026-09-15 10:00:00',
+            'end_at' => '2026-10-15 10:00:00',
+        ]);
+
+        $this->expectException(BusinessRuleException::class);
+        $this->expectExceptionMessage('套餐权益配置无效');
+        app(EntitlementService::class)->resolve($member, $this->at());
+    }
+
+    public function test_allow_type_with_a_non_boolean_value_is_not_an_entitlement(): void
+    {
+        $package = VipPackage::query()->findOrFail(2);
+        $config = $package->config;
+        $config['allow_type']['MINI_PROGRAM'] = 'true';
+        $package->update(['config' => $config]);
+        $member = User::factory()->create([
+            'vip_id' => $package->id,
+            'start_at' => '2026-09-15 10:00:00',
+            'end_at' => '2026-10-15 10:00:00',
+        ]);
+
+        $this->expectException(BusinessRuleException::class);
+        $this->expectExceptionMessage('套餐权益配置无效');
+        app(EntitlementService::class)->resolve($member, $this->at());
     }
 
     public function test_zero_uv_limit_is_normalized_to_unlimited_without_changing_zero_other_limits(): void
