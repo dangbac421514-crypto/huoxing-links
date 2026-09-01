@@ -18,6 +18,7 @@ use App\Services\QrRotationService;
 use App\Support\LinkError;
 use App\Support\LinkTypeParser;
 use Carbon\CarbonImmutable;
+use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -288,16 +289,35 @@ class LinkController extends FormController
             'config.wx.sub_title' => 'nullable|string',
             'config.wx.qr' => ['required', 'array', 'min:1'],
             'config.wx.qr.*' => ['required', 'array'],
-            'config.wx.qr.*.sort' => ['required', 'integer', 'min:0', 'max:200', 'distinct'],
+            'config.wx.qr.*.sort' => ['required', $this->strictIntegerRule(), 'numeric', 'min:0', 'max:200', 'distinct'],
             'config.wx.qr.*.name' => ['nullable', 'string'],
             'config.wx.qr.*.path' => ['required', 'string'],
-            'config.wx.qr.*.uv_limit_num' => ['nullable', 'integer', 'min:1'],
+            'config.wx.qr.*.uv_limit_num' => ['nullable', $this->strictIntegerRule(), 'numeric', 'min:1'],
             // This is display-only legacy data. Accept it for client
             // compatibility, then overwrite it to zero in the saving hook.
             'config.wx.qr.*.visit_uv' => 'nullable',
             'config.wx.qr.*.expired_at' => 'nullable|date_format:Y-m-d',
-            'config.wx.switch_type' => ['required', new Enum(SwitchType::class)],
-            'config.wx.uv_limit_type' => ['required', new Enum(UVLimitType::class)],
+            'config.wx.switch_type' => ['required', $this->strictEnumRule(SwitchType::class)],
+            'config.wx.uv_limit_type' => ['required', $this->strictEnumRule(UVLimitType::class)],
         ]);
+    }
+
+    private function strictIntegerRule(): Closure
+    {
+        return static function (string $attribute, mixed $value, Closure $fail): void {
+            if (! is_int($value)) {
+                $fail($attribute.' must be an integer.');
+            }
+        };
+    }
+
+    /** @param class-string<\BackedEnum> $enumClass */
+    private function strictEnumRule(string $enumClass): Closure
+    {
+        return static function (string $attribute, mixed $value, Closure $fail) use ($enumClass): void {
+            if (! is_int($value) || $enumClass::tryFrom($value) === null) {
+                $fail($attribute.' must be a valid integer enum value.');
+            }
+        };
     }
 }

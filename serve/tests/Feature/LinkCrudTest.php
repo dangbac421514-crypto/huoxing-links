@@ -264,6 +264,71 @@ final class LinkCrudTest extends TestCase
         $this->postJson('/api/links', $badCandidate)->assertStatus(422);
     }
 
+    public function test_landing_qr_numeric_fields_require_json_integer_types_on_create_and_update(): void
+    {
+        $owner = $this->activeMemberWithUvLimit(10);
+        $mini = $this->miniProgramFor($owner);
+        Sanctum::actingAs($owner, ['*'], 'api');
+        $base = [
+            'type' => LinkType::LANDING_MINI->value,
+            'icon' => '/icon.png',
+            'config' => [
+                'min_id' => $mini->id,
+                'wx' => [
+                    'title' => 'Title',
+                    'sub_title' => 'Subtitle',
+                    'qr' => [[
+                        'sort' => 0,
+                        'path' => 'qr.png',
+                        'name' => 'first',
+                        'uv_limit_num' => 1,
+                        'expired_at' => null,
+                    ]],
+                    'switch_type' => 1,
+                    'uv_limit_type' => 1,
+                ],
+            ],
+        ];
+        $invalidFields = [
+            ['kind' => 'qr', 'field' => 'sort', 'values' => [true, false, 1.5, '1', 'not-an-int']],
+            ['kind' => 'qr', 'field' => 'uv_limit_num', 'values' => [true, false, 1.5, '1', 'not-an-int']],
+            ['kind' => 'wx', 'field' => 'switch_type', 'values' => [true, false, 1.5, '1', 'not-an-enum']],
+            ['kind' => 'wx', 'field' => 'uv_limit_type', 'values' => [true, false, 1.5, '1', 'not-an-enum']],
+        ];
+
+        $linkCount = Link::query()->count();
+        foreach ($invalidFields as $invalidField) {
+            foreach ($invalidField['values'] as $value) {
+                $payload = $base;
+                if ($invalidField['kind'] === 'qr') {
+                    $payload['config']['wx']['qr'][0][$invalidField['field']] = $value;
+                } else {
+                    $payload['config']['wx'][$invalidField['field']] = $value;
+                }
+
+                $this->postJson('/api/links', $payload)->assertStatus(422);
+                $this->assertSame($linkCount, Link::query()->count());
+            }
+        }
+
+        $created = $this->postJson('/api/links', $base)->assertCreated();
+        $link = Link::query()->findOrFail($created->json('id'));
+        $before = $link->fresh()->config;
+        foreach ($invalidFields as $invalidField) {
+            foreach ($invalidField['values'] as $value) {
+                $payload = $base;
+                if ($invalidField['kind'] === 'qr') {
+                    $payload['config']['wx']['qr'][0][$invalidField['field']] = $value;
+                } else {
+                    $payload['config']['wx'][$invalidField['field']] = $value;
+                }
+
+                $this->putJson('/api/links/'.$link->id, $payload)->assertStatus(422);
+                $this->assertSame($before, $link->fresh()->config);
+            }
+        }
+    }
+
     public function test_landing_delete_forgets_only_its_cumulative_qr_keys_and_keeps_foreign_and_daily_state(): void
     {
         $link = $this->landingLinkWithQrs([
