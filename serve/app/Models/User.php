@@ -34,6 +34,8 @@ class User extends Authenticatable
 
     protected static function booted(): void
     {
+        // Production account creation goes through UserAccountCreator; keep this
+        // fallback for legacy and direct model creates outside those flows.
         self::creating(function (User $user) {
             if ($user->referral_code !== null && $user->referral_code !== '') {
                 return;

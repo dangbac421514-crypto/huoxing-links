@@ -9,6 +9,7 @@ use App\Http\Resources\UserResource;
 use App\Models\User;
 use App\Models\VipPackage;
 use App\Services\MembershipService;
+use App\Services\UserAccountCreator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -45,7 +46,7 @@ class UserController extends Controller
 
         try {
             DB::transaction(function () use ($request): void {
-                $user = User::query()->create([
+                $user = app(UserAccountCreator::class)->create([
                     'username' => $request->string('username')->toString(),
                     'password' => Hash::make($request->string('password')->toString()),
                     'status' => true,

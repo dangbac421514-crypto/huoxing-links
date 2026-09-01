@@ -246,6 +246,40 @@ final class AuthRegistrationTest extends TestCase
         $service->register('13800000012', 'password', null);
     }
 
+    public function test_admin_provisioner_retries_a_generated_referral_code_collision(): void
+    {
+        User::factory()->create(['referral_code' => 'COLLIDE3']);
+        $generator = new SequenceReferralCodeGenerator(['COLLIDE3', 'ADMIN001']);
+        $this->app->instance(ReferralCodeGenerator::class, $generator);
+
+        $admin = app(AdminProvisioner::class)->provision('owner-round2', 'correct-horse-battery-staple');
+
+        $this->assertSame('ADMIN001', $admin->referral_code);
+        $this->assertSame(2, $generator->calls());
+        $this->assertSame(1, User::query()->where('username', 'owner-round2')->count());
+    }
+
+    public function test_admin_created_member_retries_a_generated_referral_code_collision(): void
+    {
+        $admin = User::factory()->create([
+            'type' => UserType::Admin,
+            'must_change_password' => false,
+        ]);
+        User::factory()->create(['referral_code' => 'COLLIDE4']);
+        $generator = new SequenceReferralCodeGenerator(['COLLIDE4', 'MEMBER01']);
+        $this->app->instance(ReferralCodeGenerator::class, $generator);
+        $token = $admin->createToken('test')->plainTextToken;
+
+        $this->authWithToken($token)->postJson('/api/users', [
+            'username' => '13800000013',
+            'password' => 'password',
+        ])->assertOk();
+
+        $member = User::query()->where('username', '13800000013')->firstOrFail();
+        $this->assertSame('MEMBER01', $member->referral_code);
+        $this->assertSame(2, $generator->calls());
+    }
+
     private function authWithToken(string $token): self
     {
         return $this->withHeader('Authorization', 'Bearer '.$token);

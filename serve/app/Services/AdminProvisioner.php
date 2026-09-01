@@ -6,12 +6,13 @@ use App\Enums\UserType;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 use InvalidArgumentException;
 use LogicException;
 
 final class AdminProvisioner
 {
+    public function __construct(private readonly UserAccountCreator $accounts) {}
+
     public function provision(string $username, string $plainPassword): User
     {
         $username = trim($username);
@@ -31,15 +32,23 @@ final class AdminProvisioner
                 throw new LogicException('该账号已存在且不是管理员');
             }
 
-            $user ??= new User(['username' => $username]);
-            $user->forceFill([
-                'username' => $username,
-                'password' => Hash::make($plainPassword),
-                'type' => UserType::Admin,
-                'status' => true,
-                'must_change_password' => true,
-                'referral_code' => $user->referral_code ?: Str::upper(Str::random(8)),
-            ])->save();
+            if (! $user) {
+                $user = $this->accounts->create([
+                    'username' => $username,
+                    'password' => Hash::make($plainPassword),
+                    'type' => UserType::Admin,
+                    'status' => true,
+                    'must_change_password' => true,
+                ]);
+            } else {
+                $user->forceFill([
+                    'username' => $username,
+                    'password' => Hash::make($plainPassword),
+                    'type' => UserType::Admin,
+                    'status' => true,
+                    'must_change_password' => true,
+                ])->save();
+            }
 
             return $user->refresh();
         });
