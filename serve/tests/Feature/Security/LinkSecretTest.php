@@ -106,6 +106,17 @@ final class LinkSecretTest extends TestCase
         $this->assertStringNotContainsString('must-drop', json_encode($sanitized, JSON_THROW_ON_ERROR));
     }
 
+    public function test_record_clears_non_array_cache_including_json_strings(): void
+    {
+        $log = app(SanitizedLinkVisitRecorder::class)->record([
+            'link_id' => 1,
+            'user_id' => 1,
+            'cache' => '{"target":"https://must-not-bypass.test","secret":"must-drop"}',
+        ]);
+
+        $this->assertSame([], json_decode((string) DB::table('link_visit_logs')->where('id', $log->id)->value('cache'), true));
+    }
+
     public function test_network_log_hashes_are_purpose_separated_and_missing_values_are_null(): void
     {
         $service = app(VisitorIdentityService::class);

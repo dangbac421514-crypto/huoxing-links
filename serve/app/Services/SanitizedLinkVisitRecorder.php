@@ -117,8 +117,10 @@ final class SanitizedLinkVisitRecorder
 
     public function record(array $attributes): LinkVisitLog
     {
-        if (isset($attributes['cache']) && is_array($attributes['cache'])) {
-            $attributes['cache'] = $this->sanitize($attributes['cache']);
+        if (array_key_exists('cache', $attributes)) {
+            $attributes['cache'] = is_array($attributes['cache'])
+                ? $this->sanitize($attributes['cache'])
+                : [];
         }
 
         return LinkVisitLog::query()->create($attributes);

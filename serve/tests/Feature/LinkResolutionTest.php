@@ -13,10 +13,13 @@ use App\Models\LinkVisitLog;
 use App\Models\MiniProgram;
 use App\Models\UsagePeriod;
 use App\Services\LandingSelectionStore;
+use App\Services\PublicTargetCache;
 use App\Services\QrRotationService;
 use App\Services\UsageMeter;
 use App\Services\VisitorTokenService;
+use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Redis;
@@ -85,6 +88,38 @@ final class LinkResolutionTest extends TestCase
         $this->assertFalse($response->headers->has('set-cookie'));
     }
 
+    public function test_target_version_is_schema_backed_and_each_same_second_update_advances_monotonically(): void
+    {
+        $this->assertTrue(Schema::hasColumn('links', 'target_version'));
+        $link = $this->miniProgramLink();
+        $this->assertSame(1, (int) $link->fresh()->target_version);
+
+        Carbon::setTestNow(CarbonImmutable::parse('2026-09-02 12:00:00', 'Asia/Shanghai'));
+        try {
+            $link->update(['title' => 'first update', 'target_version' => 99]);
+            $this->assertSame(2, (int) $link->fresh()->target_version);
+
+            $link->update(['title' => 'second update', 'target_version' => 1]);
+            $this->assertSame(3, (int) $link->fresh()->target_version);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_target_version_migration_can_roll_back_and_reapply_without_losing_links(): void
+    {
+        $link = $this->miniProgramLink();
+        $migration = require database_path('migrations/2026_09_01_000103_link_target_version.php');
+
+        $migration->down();
+        $this->assertFalse(Schema::hasColumn('links', 'target_version'));
+        $this->assertDatabaseHas('links', ['id' => $link->id]);
+
+        $migration->up();
+        $this->assertTrue(Schema::hasColumn('links', 'target_version'));
+        $this->assertSame(1, (int) $link->fresh()->target_version);
+    }
+
     public function test_target_cache_hit_skips_second_resolver_but_logs_each_visitor_and_consumes_unique_uv(): void
     {
         $link = $this->miniProgramLink();
@@ -144,7 +179,7 @@ final class LinkResolutionTest extends TestCase
         $link->forceFill([
             'title' => 'changed-public-title',
             'updated_at' => CarbonImmutable::now('Asia/Shanghai')->addSecond(),
-        ])->saveQuietly();
+        ])->save();
 
         $this->withUnencryptedCookies(['visitor_id' => $visitor])->withCredentials()->getJson('/api/link-target/'.$link->code)->assertOk();
 
@@ -156,6 +191,116 @@ final class LinkResolutionTest extends TestCase
             $this->assertStringNotContainsString('changed-public-title', $key);
             $this->assertStringNotContainsString('task-2-secret', $key);
         }
+
+        Carbon::setTestNow(CarbonImmutable::parse('2026-09-02 12:00:00', 'Asia/Shanghai'));
+        try {
+            $link->update(['title' => 'same-second-first']);
+            $this->withUnencryptedCookies(['visitor_id' => $visitor])->withCredentials()
+                ->getJson('/api/link-target/'.$link->code)
+                ->assertOk();
+            $link->update(['title' => 'same-second-second']);
+            $this->withUnencryptedCookies(['visitor_id' => $visitor])->withCredentials()
+                ->getJson('/api/link-target/'.$link->code)
+                ->assertOk();
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        $this->assertSame(4, $generator->calls);
+        $this->assertGreaterThanOrEqual(4, count(Redis::connection('cache')->keys('*link-target*')));
+        $this->assertSame('link-target:v1:'.$link->id.':1:4', app(PublicTargetCache::class)->key($link));
+    }
+
+    public function test_invalid_cached_mini_targets_are_deleted_and_re_resolved_without_second_uv(): void
+    {
+        $maliciousTargets = [
+            'javascript:alert(1)',
+            'http://evil.example/target',
+            'https://evil.example/target',
+            'weixin://evil/business/?t=wrong-host',
+        ];
+        $generator = new class implements MiniProgramSchemeGenerator
+        {
+            public int $calls = 0;
+
+            public function generate(MiniProgram $mini, string $path, string $query): string
+            {
+                $this->calls++;
+
+                return 'weixin://dl/business/?t=recovered';
+            }
+        };
+        app()->instance(MiniProgramSchemeGenerator::class, $generator);
+        $expectedCalls = 0;
+
+        foreach ($maliciousTargets as $maliciousTarget) {
+            $link = $this->miniProgramLink();
+            $cache = app(PublicTargetCache::class);
+            Cache::store('redis')->put($cache->key($link), [
+                'title' => $link->title,
+                'description' => $link->description,
+                'icon' => $link->icon,
+                'target' => $maliciousTarget,
+            ], 300);
+
+            $response = $this->getJson('/api/link-target/'.$link->code);
+
+            $response->assertOk()->assertJsonPath('data.target', 'weixin://dl/business/?t=recovered');
+            $expectedCalls++;
+            $this->assertSame($expectedCalls, $generator->calls, 'resolver call count for '.$maliciousTarget);
+            $this->assertSame(1, LinkVisitLog::query()->where('link_id', $link->id)->count());
+            $this->assertSame(1, (int) UsagePeriod::query()->where('user_id', $link->user_id)->value('used_uv'));
+        }
+    }
+
+    public function test_invalid_cached_work_target_is_deleted_and_re_resolved_with_exact_https_target(): void
+    {
+        app()->instance(DnsResolver::class, new class implements DnsResolver
+        {
+            public function resolve(string $host): array
+            {
+                return ['8.8.8.8'];
+            }
+        });
+        $link = $this->linkForType(LinkType::WORK_WECHAT, ['url' => 'https://work.weixin.qq.com/ca/recovered']);
+        $cache = app(PublicTargetCache::class);
+        Cache::store('redis')->put($cache->key($link), [
+            'title' => $link->title,
+            'description' => $link->description,
+            'icon' => $link->icon,
+            'target' => 'https://evil.example/unsafe',
+        ], 300);
+
+        $response = $this->getJson('/api/link-target/'.$link->code);
+
+        $response->assertOk()->assertJsonPath('data.target', 'https://work.weixin.qq.com/ca/recovered');
+        $this->assertSame(1, LinkVisitLog::query()->where('link_id', $link->id)->count());
+    }
+
+    public function test_invalid_cached_target_followed_by_resolver_failure_deletes_cache_and_writes_no_log(): void
+    {
+        $link = $this->miniProgramLink();
+        app()->instance(MiniProgramSchemeGenerator::class, new class implements MiniProgramSchemeGenerator
+        {
+            public function generate(MiniProgram $mini, string $path, string $query): string
+            {
+                throw new \RuntimeException('provider failure');
+            }
+        });
+        $cache = app(PublicTargetCache::class);
+        Cache::store('redis')->put($cache->key($link), [
+            'title' => $link->title,
+            'description' => $link->description,
+            'icon' => $link->icon,
+            'target' => 'javascript:alert(1)',
+        ], 300);
+
+        $response = $this->getJson('/api/link-target/'.$link->code);
+
+        $response->assertStatus(502)->assertJsonPath('code', 'MINI_PROGRAM_EXTERNAL_ERROR');
+        $this->assertFalse(Cache::store('redis')->has($cache->key($link)));
+        $this->assertDatabaseMissing('link_visit_logs', ['link_id' => $link->id]);
+        $this->assertSame(1, (int) UsagePeriod::query()->where('user_id', $link->user_id)->value('used_uv'));
     }
 
     public function test_landing_target_and_show_qr_reuse_the_first_selection_without_second_uv_or_visit_log(): void
@@ -246,6 +391,93 @@ final class LinkResolutionTest extends TestCase
 
         $this->assertSame($logCount, LinkVisitLog::query()->count());
         $this->assertSame($periodUsed, (int) UsagePeriod::query()->where('user_id', $link->user_id)->value('used_uv'));
+    }
+
+    public function test_show_qr_requires_one_raw_unencoded_visitor_token_pair(): void
+    {
+        $link = $this->landingLinkWithQrs([
+            ['sort' => 1, 'path' => 'landing-qr.png', 'expired_at' => null, 'uv_limit_num' => 5],
+        ]);
+        $mini = MiniProgram::query()->findOrFail(data_get($link->config, 'min_id'));
+        $mini->update(['is_pre_min' => true, 'type' => MiniType::LANDING]);
+        app()->instance(MiniProgramSchemeGenerator::class, new class implements MiniProgramSchemeGenerator
+        {
+            public function generate(MiniProgram $mini, string $path, string $query): string
+            {
+                return 'weixin://dl/business/?t=landing-query';
+            }
+        });
+        $token = $this->getJson('/api/link-target/'.$link->code)->json('data.visitorToken');
+        $encodedValue = urlencode($token);
+
+        foreach ([
+            '?visitor_token='.$encodedValue.'&visitor_token='.$encodedValue,
+            '?%76isitor_token='.$encodedValue,
+            '?visitor_token='.$encodedValue.'&device_uid=legacy',
+            '?visitor_token='.$encodedValue.'&extra=1',
+            '?visitor_token',
+            '?visitor_token=',
+        ] as $query) {
+            $response = $this->getJson('/api/link-show-qr/'.$link->code.$query);
+            $response->assertStatus(422)->assertJsonPath('code', 'VISITOR_TOKEN_INVALID');
+        }
+    }
+
+    public function test_show_qr_rejects_malicious_asset_paths_and_never_echoes_them(): void
+    {
+        $link = $this->landingLinkWithQrs([
+            ['sort' => 1, 'path' => 'landing-qr.png', 'expired_at' => null, 'uv_limit_num' => 5],
+        ]);
+        $mini = MiniProgram::query()->findOrFail(data_get($link->config, 'min_id'));
+        $mini->update(['is_pre_min' => true, 'type' => MiniType::LANDING]);
+        app()->instance(MiniProgramSchemeGenerator::class, new class implements MiniProgramSchemeGenerator
+        {
+            public function generate(MiniProgram $mini, string $path, string $query): string
+            {
+                return 'weixin://dl/business/?t=landing-assets';
+            }
+        });
+        $token = $this->getJson('/api/link-target/'.$link->code)->json('data.visitorToken');
+        $store = app(LandingSelectionStore::class);
+
+        $store->put($token, [
+            'id' => $link->id,
+            'avatar' => 'https://evil.example/avatar.png',
+            'title' => 'safe title',
+            'sub_title' => 'safe subtitle',
+            'qr' => 'landing-qr.png',
+        ]);
+        $safeAvatarResponse = $this->getJson('/api/link-show-qr/'.$link->code.'?visitor_token='.urlencode($token));
+        $safeAvatarResponse->assertOk()->assertJsonPath('data.avatar', '');
+        $this->assertStringNotContainsString('evil.example', $safeAvatarResponse->getContent());
+
+        foreach ([
+            '',
+            'http://evil.example/qr.png',
+            'https://evil.example/qr.png',
+            '//evil.example/qr.png',
+            '/absolute/qr.png',
+            './dot/qr.png',
+            '../parent/qr.png',
+            'nested/../qr.png',
+            'qr.png?query=1',
+            'qr.png#fragment',
+            'qr\\windows.png',
+            "qr\nnewline.png",
+        ] as $maliciousQr) {
+            $store->put($token, [
+                'id' => $link->id,
+                'avatar' => 'avatar.png',
+                'title' => 'safe title',
+                'sub_title' => 'safe subtitle',
+                'qr' => $maliciousQr,
+            ]);
+            $response = $this->getJson('/api/link-show-qr/'.$link->code.'?visitor_token='.urlencode($token));
+            $response->assertStatus(422)->assertJsonPath('code', 'QR_UNAVAILABLE');
+            if ($maliciousQr !== '') {
+                $this->assertStringNotContainsString($maliciousQr, $response->getContent());
+            }
+        }
     }
 
     public function test_qr_provider_failure_returns_stable_error_without_log_and_keeps_new_cookie(): void
@@ -359,7 +591,37 @@ final class LinkResolutionTest extends TestCase
             );
             $this->assertIsString($data['target']);
             $this->assertNotSame('', $data['target']);
+            $expectedTarget = match ($link->type) {
+                LinkType::MINI_PROGRAM => 'weixin://dl/business/?t=mini-task6',
+                LinkType::KING_DOC => 'weixin://dl/business/?t=king-task6',
+                LinkType::CLI_QR => 'weixin://dl/business/?t=cli-task6',
+                LinkType::WORK_WECHAT => 'https://work.weixin.qq.com/ca/task6',
+                LinkType::LANDING_MINI => 'weixin://dl/business/?t=mini-task6',
+                LinkType::QR_QQ => 'weixin://dl/business/?t=qq-task6',
+            };
+            $this->assertSame($expectedTarget, $data['target']);
         }
+    }
+
+    public function test_valid_mini_provider_failure_consumes_uv_returns_502_cookie_and_no_log(): void
+    {
+        $link = $this->miniProgramLink();
+        app()->instance(MiniProgramSchemeGenerator::class, new class implements MiniProgramSchemeGenerator
+        {
+            public function generate(MiniProgram $mini, string $path, string $query): string
+            {
+                throw new \RuntimeException('provider secret must not leak');
+            }
+        });
+
+        $response = $this->getJson('/api/link-target/'.$link->code);
+
+        $response->assertStatus(502)
+            ->assertJsonPath('code', 'MINI_PROGRAM_EXTERNAL_ERROR')
+            ->assertCookie('visitor_id');
+        $this->assertDatabaseMissing('link_visit_logs', ['link_id' => $link->id]);
+        $this->assertSame(1, (int) UsagePeriod::query()->where('user_id', $link->user_id)->value('used_uv'));
+        $this->assertStringNotContainsString('provider secret', $response->getContent());
     }
 
     public function test_schema_keeps_links_without_an_expiry_gate_and_sanitizes_visit_logs(): void

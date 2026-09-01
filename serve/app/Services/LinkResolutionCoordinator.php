@@ -12,6 +12,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Exceptions\LinkResolutionException;
 use App\Exceptions\QrUnavailable;
 use App\Models\Link;
+use App\Services\Http\UrlPolicy;
 use App\Services\Resolvers\TargetResolverRegistry;
 use App\Support\LinkError;
 use App\Support\LinkTypeParser;
@@ -94,6 +95,8 @@ final class LinkResolutionCoordinator
         private readonly VisitorTokenService $tokens,
         private readonly SanitizedLinkVisitRecorder $visits,
         private readonly PublicTargetCache $cache,
+        private readonly WeixinSchemePolicy $weixinSchemes,
+        private readonly UrlPolicy $urlPolicy,
     ) {}
 
     public function target(Request $request, string $code): CoordinatorResponse
@@ -136,6 +139,17 @@ final class LinkResolutionCoordinator
             $resolved = null;
             if ($type !== LinkType::LANDING_MINI) {
                 $publicTarget = $this->cache->get($link);
+                if ($publicTarget !== null) {
+                    try {
+                        $this->assertTargetProtocol($type, $publicTarget['target']);
+                    } catch (LinkResolutionException) {
+                        // A cache entry is untrusted persisted data. Drop an
+                        // invalid target and resolve once without consuming
+                        // UV a second time.
+                        $this->cache->forget($link);
+                        $publicTarget = null;
+                    }
+                }
             }
 
             if ($publicTarget === null) {
@@ -145,6 +159,7 @@ final class LinkResolutionCoordinator
                 );
                 $publicTarget = $this->visits->publicTarget($resolved);
                 $this->assertPublicTarget($publicTarget);
+                $this->assertTargetProtocol($type, $publicTarget['target']);
 
                 if ($type !== LinkType::LANDING_MINI) {
                     $this->cache->put($link, $publicTarget);
@@ -203,18 +218,7 @@ final class LinkResolutionCoordinator
         }
 
         try {
-            $query = $request->query();
-            if (
-                count($query) !== 1
-                || ! array_key_exists('visitor_token', $query)
-                || ! is_string($query['visitor_token'])
-                || $query['visitor_token'] === ''
-                || strlen($query['visitor_token']) > self::MAX_VISITOR_TOKEN_LENGTH
-            ) {
-                throw new LinkResolutionException(LinkError::VISITOR_TOKEN_INVALID, '访问凭证无效或已过期', 422);
-            }
-
-            $token = $query['visitor_token'];
+            $token = $this->visitorTokenFromRawQuery($request);
             $this->tokens->verify($token, $code, $at);
             $selection = $this->selections->get($token);
             if (! is_array($selection) || (int) ($selection['id'] ?? 0) !== (int) $link->getKey()) {
@@ -231,6 +235,31 @@ final class LinkResolutionCoordinator
         } catch (Throwable $exception) {
             return $this->unexpected($link, $exception);
         }
+    }
+
+    private function visitorTokenFromRawQuery(Request $request): string
+    {
+        $rawQuery = $request->server('QUERY_STRING');
+        if (! is_string($rawQuery) || $rawQuery === '' || substr_count($rawQuery, '&') !== 0) {
+            throw new LinkResolutionException(LinkError::VISITOR_TOKEN_INVALID, '访问凭证无效或已过期', 422);
+        }
+
+        $separator = strpos($rawQuery, '=');
+        if ($separator === false || substr($rawQuery, 0, $separator) !== 'visitor_token') {
+            throw new LinkResolutionException(LinkError::VISITOR_TOKEN_INVALID, '访问凭证无效或已过期', 422);
+        }
+
+        $rawValue = substr($rawQuery, $separator + 1);
+        if ($rawValue === '' || str_contains($rawValue, '&') || str_contains($rawValue, '#')) {
+            throw new LinkResolutionException(LinkError::VISITOR_TOKEN_INVALID, '访问凭证无效或已过期', 422);
+        }
+
+        $token = rawurldecode($rawValue);
+        if ($token === '' || strlen($token) > self::MAX_VISITOR_TOKEN_LENGTH) {
+            throw new LinkResolutionException(LinkError::VISITOR_TOKEN_INVALID, '访问凭证无效或已过期', 422);
+        }
+
+        return $token;
     }
 
     private function assertIdentity(VisitorIdentity $identity): void
@@ -255,6 +284,40 @@ final class LinkResolutionCoordinator
         if (! is_string($publicTarget['target']) || $publicTarget['target'] === '') {
             throw new LinkResolutionException(self::GENERIC_ERROR, 'Invalid public target.', 500);
         }
+    }
+
+    private function assertTargetProtocol(LinkType $type, string $target): void
+    {
+        try {
+            if ($type === LinkType::WORK_WECHAT) {
+                $uri = $this->urlPolicy->assertExternal($target, ['work.weixin.qq.com']);
+                if ($uri->getPath() === '' || $uri->getPath() === '/') {
+                    throw new \RuntimeException('Work WeChat target path is invalid.');
+                }
+
+                return;
+            }
+
+            $this->weixinSchemes->assert($target);
+        } catch (Throwable) {
+            throw new LinkResolutionException(
+                $this->protocolErrorCode($type),
+                'Resolved target protocol is invalid.',
+                502,
+            );
+        }
+    }
+
+    private function protocolErrorCode(LinkType $type): string
+    {
+        return match ($type) {
+            LinkType::MINI_PROGRAM => LinkError::MINI_PROGRAM_EXTERNAL_ERROR,
+            LinkType::KING_DOC => LinkError::KING_DOC_EXTERNAL_ERROR,
+            LinkType::CLI_QR => LinkError::CLI_QR_EXTERNAL_ERROR,
+            LinkType::WORK_WECHAT => LinkError::WORK_WECHAT_EXTERNAL_ERROR,
+            LinkType::LANDING_MINI => LinkError::LANDING_MINI_EXTERNAL_ERROR,
+            LinkType::QR_QQ => LinkError::QQ_QR_EXTERNAL_ERROR,
+        };
     }
 
     private function decisionError(Link $link, AccessDecision $decision): CoordinatorResponse
@@ -322,16 +385,13 @@ final class LinkResolutionCoordinator
     private function showQrData(Link $link, array $selection): array
     {
         $qr = $selection['qr'] ?? ($selection['path'] ?? null);
-        if (! is_string($qr) || trim($qr) === '') {
-            throw new QrUnavailable;
-        }
 
         return [
             'id' => (int) $link->getKey(),
             'avatar' => $this->publicAsset($selection['avatar'] ?? null),
             'title' => $this->safeString($selection['title'] ?? null),
             'sub_title' => $this->safeString($selection['sub_title'] ?? null),
-            'qr' => $this->publicAsset($qr),
+            'qr' => $this->publicAsset($qr, true),
         ];
     }
 
@@ -340,15 +400,56 @@ final class LinkResolutionCoordinator
         return is_scalar($value) ? (string) $value : '';
     }
 
-    private function publicAsset(mixed $value): string
+    private function publicAsset(mixed $value, bool $required = false): string
     {
-        if (! is_string($value) || trim($value) === '') {
+        if (! is_string($value) || ! $this->isStorageRelativePath($value)) {
+            if ($required) {
+                throw new QrUnavailable;
+            }
+
             return '';
-        }
-        if (preg_match('~^(?:https?:)?//~i', $value) === 1) {
-            return $value;
         }
 
         return Storage::url($value);
+    }
+
+    private function isStorageRelativePath(string $path): bool
+    {
+        if (
+            $path === ''
+            || strlen($path) > 1024
+            || preg_match('/[\x00-\x20\x7f]/', $path) === 1
+            || preg_match('/%(?![0-9a-fA-F]{2})/', $path) === 1
+            || str_starts_with($path, '/')
+            || str_contains($path, '//')
+            || str_contains($path, '\\')
+            || str_contains($path, '?')
+            || str_contains($path, '#')
+            || str_contains($path, '@')
+            || preg_match('/^[a-z][a-z0-9+.-]*:/i', $path) === 1
+        ) {
+            return false;
+        }
+
+        $decoded = rawurldecode($path);
+        if (
+            preg_match('/[\x00-\x20\x7f]/', $decoded) === 1
+            || str_contains($decoded, '//')
+            || str_contains($decoded, '\\')
+            || str_contains($decoded, '?')
+            || str_contains($decoded, '#')
+            || str_contains($decoded, '@')
+            || preg_match('/^[a-z][a-z0-9+.-]*:/i', $decoded) === 1
+        ) {
+            return false;
+        }
+
+        foreach (explode('/', $decoded) as $segment) {
+            if ($segment === '' || $segment === '.' || $segment === '..') {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
