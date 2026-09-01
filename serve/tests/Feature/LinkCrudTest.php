@@ -9,6 +9,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\CreatesLinkFixtures;
 use Tests\TestCase;
@@ -118,6 +119,7 @@ final class LinkCrudTest extends TestCase
             'code' => 'dirty999',
             'config' => json_encode(['url' => 'https://example.invalid']),
             'price' => 0,
+            'target_version' => (string) Str::uuid(),
             'expired_at' => null,
             'created_at' => now(),
             'updated_at' => now(),

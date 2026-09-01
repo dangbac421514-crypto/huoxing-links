@@ -683,6 +683,7 @@ final class LinkResolutionTest extends TestCase
             'code' => 'legacy-upgrade',
             'config' => json_encode([]),
             'price' => 0,
+            'target_version' => (string) Str::uuid(),
             'expired_at' => '2030-01-01 00:00:00',
             'created_at' => now(),
             'updated_at' => now(),
