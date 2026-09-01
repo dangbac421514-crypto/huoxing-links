@@ -14,7 +14,7 @@ final class VipPackageSeeder extends Seeder
             'KING_DOC',
             'LANDING_MINI',
             'MINI_PROGRAM',
-            'QQ_QR',
+            'QR_QQ',
             'WORK_WECHAT',
         ];
 

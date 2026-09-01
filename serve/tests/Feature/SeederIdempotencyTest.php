@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\LinkType;
 use App\Models\MaterialCategory;
 use App\Models\SysConfig;
 use App\Models\VipPackage;
@@ -29,8 +30,9 @@ final class SeederIdempotencyTest extends TestCase
         $this->assertTrue($trial->config['pre_min']);
         $allowTypeKeys = array_keys($trial->config['allow_type']);
         sort($allowTypeKeys);
-        $expectedAllowTypeKeys = ['CLI_QR', 'KING_DOC', 'LANDING_MINI', 'MINI_PROGRAM', 'QQ_QR', 'WORK_WECHAT'];
+        $expectedAllowTypeKeys = LinkType::getAllType();
         sort($expectedAllowTypeKeys);
+        $this->assertSame(['CLI_QR', 'KING_DOC', 'LANDING_MINI', 'MINI_PROGRAM', 'QR_QQ', 'WORK_WECHAT'], $expectedAllowTypeKeys);
         $this->assertSame($expectedAllowTypeKeys, $allowTypeKeys);
         $this->assertSame(
             ['MINI_PROGRAM'],
