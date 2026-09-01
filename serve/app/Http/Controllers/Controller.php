@@ -16,10 +16,10 @@ class Controller extends BaseController
         try {
             DB::connection()->getPdo();
             if (DB::table('sys_configs')->count() < 1) {
-                return redirect('install?step=1');
+                abort(503, 'The application is not initialized.');
             }
         } catch (\Exception $e) {
-            return redirect('install?step=1');
+            abort(503, 'The application is temporarily unavailable.');
         }
 
         return view('welcome');
