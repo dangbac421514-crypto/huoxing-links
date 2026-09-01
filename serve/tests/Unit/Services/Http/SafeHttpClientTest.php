@@ -4,8 +4,11 @@ namespace Tests\Unit\Services\Http;
 
 use App\Contracts\DnsResolver;
 use App\Exceptions\UnsafeUrl;
+use App\Services\Http\CappedSinkStream;
 use App\Services\Http\SafeHttpClient;
 use App\Services\Http\UrlPolicy;
+use GuzzleHttp\Exception\TransferException;
+use GuzzleHttp\Psr7\Response as PsrResponse;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -378,6 +381,186 @@ final class SafeHttpClientTest extends TestCase
             $this->assertSame('UNSAFE_URL', $exception->errorCode);
             $this->assertStringNotContainsString('xxxx', $exception->getMessage());
         }
+    }
+
+    public function test_capped_sink_rejects_a_write_that_would_cross_one_mebibyte_without_overflow(): void
+    {
+        $wholeOverflow = new CappedSinkStream;
+        try {
+            $wholeOverflow->write(str_repeat('x', 1048577));
+            $this->fail('capped sink partially accepted a one mebibyte plus one write');
+        } catch (UnsafeUrl $exception) {
+            $this->assertSame('UNSAFE_URL', $exception->errorCode);
+        }
+        $this->assertSame(0, $wholeOverflow->getSize());
+
+        $sink = new CappedSinkStream;
+        $this->assertSame(1048576, $sink->write(str_repeat('x', 1048576)));
+
+        try {
+            $sink->write('y');
+            $this->fail('capped sink accepted a write beyond one mebibyte');
+        } catch (UnsafeUrl $exception) {
+            $this->assertSame('UNSAFE_URL', $exception->errorCode);
+        }
+
+        $sink->rewind();
+        $this->assertSame(1048576, strlen($sink->getContents()));
+    }
+
+    public function test_safe_http_passes_a_fresh_capped_sink_and_header_guard_to_each_request(): void
+    {
+        $this->bindDns(['safe.example' => ['8.8.8.8']]);
+        $observed = [];
+        $attempts = 0;
+        Http::fake(function ($request, array $options) use (&$observed, &$attempts) {
+            $observed[] = $options;
+            $attempts++;
+
+            return $attempts < 3 ? Http::response('', 503) : Http::response('ok', 200);
+        });
+
+        $this->assertSame('ok', app(SafeHttpClient::class)->getText('https://safe.example/capped-options', ['safe.example']));
+        $this->assertCount(3, $observed);
+        for ($index = 0; $index < 3; $index++) {
+            $this->assertInstanceOf(CappedSinkStream::class, $observed[$index]['sink']);
+            $this->assertTrue($observed[$index]['stream']);
+            $this->assertIsCallable($observed[$index]['on_headers']);
+        }
+        $this->assertNotSame($observed[0]['sink'], $observed[1]['sink']);
+        $this->assertNotSame($observed[1]['sink'], $observed[2]['sink']);
+    }
+
+    public function test_safe_http_aborts_a_handler_write_after_one_mebibyte_without_content_length(): void
+    {
+        $this->bindDns(['safe.example' => ['8.8.8.8']]);
+        $sink = null;
+        $sizeAfterRejectedWrite = null;
+        Http::fake(function ($request, array $options) use (&$sink, &$sizeAfterRejectedWrite) {
+            $sink = $options['sink'];
+            for ($chunk = 0; $chunk < 128; $chunk++) {
+                $sink->write(str_repeat('x', 8192));
+            }
+            try {
+                $sink->write('y');
+            } catch (UnsafeUrl $exception) {
+                $sizeAfterRejectedWrite = $sink->getSize();
+                throw $exception;
+            }
+
+            return Http::response('unreachable', 200);
+        });
+
+        try {
+            app(SafeHttpClient::class)->getText('https://safe.example/handler-large', ['safe.example']);
+            $this->fail('handler wrote beyond one mebibyte');
+        } catch (UnsafeUrl $exception) {
+            $this->assertSame('UNSAFE_URL', $exception->errorCode);
+            $this->assertStringNotContainsString('unreachable', $exception->getMessage());
+        }
+
+        $this->assertInstanceOf(CappedSinkStream::class, $sink);
+        $this->assertSame(1048576, $sizeAfterRejectedWrite);
+    }
+
+    public function test_safe_http_rejects_a_declared_oversize_body_in_on_headers_before_handler_write(): void
+    {
+        $this->bindDns(['safe.example' => ['8.8.8.8']]);
+        $sink = null;
+        $sizeAfterHeadersRejected = null;
+        Http::fake(function ($request, array $options) use (&$sink, &$sizeAfterHeadersRejected) {
+            $sink = $options['sink'];
+            try {
+                $options['on_headers'](new PsrResponse(200, ['Content-Length' => '1048577']));
+            } catch (UnsafeUrl $exception) {
+                $sizeAfterHeadersRejected = $sink->getSize();
+                throw $exception;
+            }
+            $sink->write('must-not-write');
+
+            return Http::response('unreachable', 200);
+        });
+
+        try {
+            app(SafeHttpClient::class)->getText('https://safe.example/header-large', ['safe.example']);
+            $this->fail('on_headers accepted a declared oversized body');
+        } catch (UnsafeUrl $exception) {
+            $this->assertSame('UNSAFE_URL', $exception->errorCode);
+            $this->assertStringNotContainsString('unreachable', $exception->getMessage());
+        }
+
+        $this->assertInstanceOf(CappedSinkStream::class, $sink);
+        $this->assertSame(0, $sizeAfterHeadersRejected);
+    }
+
+    public function test_safe_http_does_not_retry_a_capped_sink_overflow(): void
+    {
+        $this->bindDns(['safe.example' => ['8.8.8.8']]);
+        $attempts = 0;
+        Http::fake(function ($request, array $options) use (&$attempts) {
+            $attempts++;
+
+            return Http::response(str_repeat('x', 1048577), 200);
+        });
+
+        try {
+            app(SafeHttpClient::class)->getText('https://safe.example/no-retry-on-overflow', ['safe.example']);
+            $this->fail('capped sink overflow was accepted');
+        } catch (UnsafeUrl $exception) {
+            $this->assertSame('UNSAFE_URL', $exception->errorCode);
+        }
+
+        $this->assertSame(1, $attempts);
+    }
+
+    public function test_safe_http_does_not_retry_a_handler_wrapped_capped_sink_overflow(): void
+    {
+        $this->bindDns(['safe.example' => ['8.8.8.8']]);
+        $attempts = 0;
+        Http::fake(function ($request, array $options) use (&$attempts) {
+            $attempts++;
+            try {
+                $options['sink']->write(str_repeat('x', 1048577));
+            } catch (UnsafeUrl $exception) {
+                throw new TransferException('handler sink write failed', 0, $exception);
+            }
+
+            return Http::response('unreachable', 200);
+        });
+
+        try {
+            app(SafeHttpClient::class)->getText('https://safe.example/no-retry-on-wrapped-overflow', ['safe.example']);
+            $this->fail('handler-wrapped capped sink overflow was accepted');
+        } catch (UnsafeUrl $exception) {
+            $this->assertSame('UNSAFE_URL', $exception->errorCode);
+        }
+
+        $this->assertSame(1, $attempts);
+    }
+
+    public function test_safe_http_does_not_retry_a_handler_wrapped_header_size_rejection(): void
+    {
+        $this->bindDns(['safe.example' => ['8.8.8.8']]);
+        $attempts = 0;
+        Http::fake(function ($request, array $options) use (&$attempts) {
+            $attempts++;
+            try {
+                $options['on_headers'](new PsrResponse(200, ['Content-Length' => '1048577']));
+            } catch (UnsafeUrl $exception) {
+                throw new TransferException('handler header rejection', 0, $exception);
+            }
+
+            return Http::response('unreachable', 200);
+        });
+
+        try {
+            app(SafeHttpClient::class)->getText('https://safe.example/no-retry-on-header-rejection', ['safe.example']);
+            $this->fail('handler-wrapped header rejection was accepted');
+        } catch (UnsafeUrl $exception) {
+            $this->assertSame('UNSAFE_URL', $exception->errorCode);
+        }
+
+        $this->assertSame(1, $attempts);
     }
 
     /** @param array<string, list<string>> $answers */

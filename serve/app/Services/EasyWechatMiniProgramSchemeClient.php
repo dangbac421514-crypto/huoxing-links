@@ -38,7 +38,7 @@ final class EasyWechatMiniProgramSchemeClient implements MiniProgramSchemeClient
             $transport = new RetryableHttpClient(
                 $transport,
                 new GenericRetryStrategy(
-                    [0 => ['GET', 'POST'], 500, 502, 503, 504],
+                    $this->retryStatusCodes(),
                     0,
                     1.0,
                     0,
@@ -77,5 +77,16 @@ final class EasyWechatMiniProgramSchemeClient implements MiniProgramSchemeClient
         } catch (Throwable) {
             throw new \RuntimeException('Mini program provider request failed');
         }
+    }
+
+    /** @return array<int, list<string>> */
+    private function retryStatusCodes(): array
+    {
+        $statusCodes = [0 => ['GET', 'POST']];
+        foreach (range(500, 599) as $statusCode) {
+            $statusCodes[$statusCode] = ['GET', 'POST'];
+        }
+
+        return $statusCodes;
     }
 }

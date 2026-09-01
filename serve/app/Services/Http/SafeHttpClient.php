@@ -9,6 +9,7 @@ use GuzzleHttp\Psr7\UriResolver;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Psr\Http\Message\ResponseInterface as PsrResponseInterface;
 use Psr\Http\Message\StreamInterface;
 use Throwable;
 
@@ -89,23 +90,43 @@ final class SafeHttpClient
     private function send(string $url): Response
     {
         for ($attempt = 0; $attempt < 3; $attempt++) {
+            $sink = new CappedSinkStream;
+            $headerSizeRejected = false;
             try {
                 $response = Http::connectTimeout(3)
                     ->timeout(8)
                     ->withoutRedirecting()
-                    ->withOptions(['stream' => true])
+                    ->withOptions([
+                        'sink' => $sink,
+                        'stream' => true,
+                        'on_headers' => static function (PsrResponseInterface $response) use (&$headerSizeRejected): void {
+                            try {
+                                self::assertContentLength($response->getHeaderLine('Content-Length'));
+                            } catch (UnsafeUrl $exception) {
+                                $headerSizeRejected = true;
+                                throw $exception;
+                            }
+                        },
+                    ])
                     ->get($url);
             } catch (ConnectionException|TransferException) {
+                $validationRejected = $headerSizeRejected || $sink->hasRejectedWrite();
+                $sink->close();
+                if ($validationRejected) {
+                    throw new UnsafeUrl;
+                }
                 if ($attempt < 2) {
                     continue;
                 }
                 throw new UnsafeUrl;
             } catch (Throwable) {
+                $sink->close();
                 throw new UnsafeUrl;
             }
 
             if ($response->status() >= 500) {
                 $response->close();
+                $sink->close();
                 if ($attempt < 2) {
                     continue;
                 }
@@ -123,13 +144,13 @@ final class SafeHttpClient
         try {
             $length = $response->header('Content-Length');
             if ($length !== '') {
-                if (! ctype_digit($length) || strlen($length) > 7 || (int) $length > self::MAX_BODY_BYTES) {
-                    $response->close();
-                    throw new UnsafeUrl;
-                }
+                self::assertContentLength($length);
             }
 
             $stream = $response->toPsrResponse()->getBody();
+            if ($stream->isSeekable()) {
+                $stream->rewind();
+            }
             $body = $this->readBoundedStream($stream);
             $response->close();
 
@@ -139,6 +160,13 @@ final class SafeHttpClient
             throw $exception;
         } catch (Throwable) {
             $response->close();
+            throw new UnsafeUrl;
+        }
+    }
+
+    private static function assertContentLength(string $length): void
+    {
+        if ($length !== '' && (! ctype_digit($length) || strlen($length) > 7 || (int) $length > self::MAX_BODY_BYTES)) {
             throw new UnsafeUrl;
         }
     }

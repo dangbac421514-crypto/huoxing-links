@@ -629,6 +629,101 @@ final class TargetResolverTest extends TestCase
         $this->assertSame(3, $attempts);
     }
 
+    public function test_easywechat_transport_retries_any_5xx_status_before_success(): void
+    {
+        $attempts = 0;
+        $transport = new MockHttpClient(function (string $method, string $url, array $options) use (&$attempts): MockResponse {
+            if (str_contains($url, 'cgi-bin/token')) {
+                return new MockResponse(
+                    json_encode(['access_token' => 'fake-access-token', 'expires_in' => 7200], JSON_THROW_ON_ERROR),
+                    ['http_code' => 200, 'response_headers' => ['content-type' => 'application/json']],
+                );
+            }
+            $attempts++;
+            if ($attempts === 1) {
+                return new MockResponse('', ['http_code' => 501]);
+            }
+            if ($attempts === 2) {
+                return new MockResponse('', ['http_code' => 599]);
+            }
+
+            return new MockResponse(
+                json_encode(['openlink' => 'weixin://dl/business/?t=any-5xx-token'], JSON_THROW_ON_ERROR),
+                ['http_code' => 200, 'response_headers' => ['content-type' => 'application/json']],
+            );
+        });
+
+        $result = (new EasyWechatMiniProgramSchemeClient($transport))->generate(
+            'wxany5xxretry1',
+            'transport-secret',
+            'pages/index/index',
+            'code=abc',
+        );
+
+        $this->assertSame(['openlink' => 'weixin://dl/business/?t=any-5xx-token'], $result);
+        $this->assertSame(3, $attempts);
+    }
+
+    public function test_easywechat_transport_maps_three_5xx_failures_after_two_retries(): void
+    {
+        $attempts = 0;
+        $transport = new MockHttpClient(function (string $method, string $url, array $options) use (&$attempts): MockResponse {
+            if (str_contains($url, 'cgi-bin/token')) {
+                return new MockResponse(
+                    json_encode(['access_token' => 'fake-access-token', 'expires_in' => 7200], JSON_THROW_ON_ERROR),
+                    ['http_code' => 200, 'response_headers' => ['content-type' => 'application/json']],
+                );
+            }
+            $attempts++;
+
+            return new MockResponse('', ['http_code' => 599]);
+        });
+
+        try {
+            (new EasyWechatMiniProgramSchemeClient($transport))->generate(
+                'wxany5xxfailure1',
+                'transport-secret',
+                'pages/index/index',
+                'code=abc',
+            );
+            $this->fail('three 5xx failures were accepted');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Mini program provider request failed', $exception->getMessage());
+        }
+
+        $this->assertSame(3, $attempts);
+    }
+
+    public function test_easywechat_transport_does_not_retry_a_400_response(): void
+    {
+        $attempts = 0;
+        $transport = new MockHttpClient(function (string $method, string $url, array $options) use (&$attempts): MockResponse {
+            if (str_contains($url, 'cgi-bin/token')) {
+                return new MockResponse(
+                    json_encode(['access_token' => 'fake-access-token', 'expires_in' => 7200], JSON_THROW_ON_ERROR),
+                    ['http_code' => 200, 'response_headers' => ['content-type' => 'application/json']],
+                );
+            }
+            $attempts++;
+
+            return new MockResponse('', ['http_code' => 400]);
+        });
+
+        try {
+            (new EasyWechatMiniProgramSchemeClient($transport))->generate(
+                'wxany400once01',
+                'transport-secret',
+                'pages/index/index',
+                'code=abc',
+            );
+            $this->fail('400 response was accepted');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Mini program provider request failed', $exception->getMessage());
+        }
+
+        $this->assertSame(1, $attempts);
+    }
+
     /** @return array<string, string> */
     private function parseQuery(string $query): array
     {
