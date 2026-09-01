@@ -105,6 +105,12 @@ final class CardJumpOnlyTest extends TestCase
         $page->assertDontSee('火星智慧引流', false);
     }
 
+    public function test_root_without_a_card_opens_the_existing_admin_login(): void
+    {
+        $this->seed();
+        $this->get('/')->assertRedirect('/web/#/login');
+    }
+
     private function plainUser(string $username, UserType $type = UserType::MEMBER): User
     {
         return User::query()->create([

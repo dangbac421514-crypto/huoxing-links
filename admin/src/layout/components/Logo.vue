@@ -2,9 +2,8 @@
   <div class="sidebar-logo sidebar-logo-expend">
     <transition enter-active-class="animate__animated animate__fadeInLeft">
       <div class="logo_icon">
-        <img class="logo_icon_item" v-if="!configStore.web_site_logo" src="@/assets/menu/logo.png" alt="" />
-        <img class="logo_icon_item" v-else :src="logPath" alt="" />
-        <span class="logo-title">{{ configStore.web_site_title || '火星快链' }}</span>
+        <img class="logo_icon_item" v-if="configStore.web_site_logo" :src="logPath" alt="" />
+        <span class="logo-title">{{ configStore.web_site_title || '卡片跳转' }}</span>
       </div>
     </transition>
   </div>

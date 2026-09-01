@@ -28,6 +28,6 @@ class Controller extends BaseController
             abort(503, 'The application is temporarily unavailable.');
         }
 
-        return view('welcome');
+        return redirect('/web/#/login');
     }
 }

@@ -8,7 +8,7 @@ const useAppStore = defineStore('app-store', {
       loginTitle: '',
       loginDesc: '',
       title: '优秀的私域营销工具',
-      minTitle: '火星快链'
+      minTitle: '卡片跳转'
     },
     theme: {
       sidebarStyle: 'light', // sidebar 样式 light/dark
