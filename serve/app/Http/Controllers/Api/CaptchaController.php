@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\SMSCaptchaRequest;
 use App\Jobs\SendEmailJobs;
 use App\Services\AliDySms;
+use App\Services\ImageCaptchaService;
 use App\Services\SystemConfig;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
@@ -17,9 +18,9 @@ class CaptchaController extends Controller
     use ApiResource;
 
     // 图片验证码
-    public function image(): JsonResponse
+    public function image(ImageCaptchaService $captchas): JsonResponse
     {
-        return $this->success(app('captcha')->create('math', true));
+        return $this->success($captchas->issue());
     }
 
     // 短信验证码
