@@ -8,6 +8,10 @@ final class TestEnvironmentGuard
 {
     public static function assertSafe(): void
     {
+        if ((string) env('TEST_ENV_SENTINEL') !== 'link_saas_test_wrapper') {
+            throw new AssertionFailedError('Unsafe test environment: TEST_ENV_SENTINEL');
+        }
+
         $allowed = [
             'APP_ENV' => 'testing',
             'DB_CONNECTION' => 'mysql',
@@ -29,6 +33,11 @@ final class TestEnvironmentGuard
         if (! in_array((string) env('DB_PORT'), ['33067', '3306'], true)) {
             throw new AssertionFailedError('Unsafe test environment: DB_PORT');
         }
+        $dbHost = (string) env('DB_HOST');
+        $dbPort = (string) env('DB_PORT');
+        if (($dbHost === 'mysql' && $dbPort !== '3306') || ($dbHost !== 'mysql' && $dbPort !== '33067')) {
+            throw new AssertionFailedError('Unsafe test environment: DB destination');
+        }
         if (! str_ends_with((string) env('DB_DATABASE'), '_test')) {
             throw new AssertionFailedError('Unsafe test environment: DB_DATABASE');
         }
@@ -37,6 +46,11 @@ final class TestEnvironmentGuard
         }
         if (! in_array((string) env('REDIS_PORT'), ['6390', '6379'], true)) {
             throw new AssertionFailedError('Unsafe test environment: REDIS_PORT');
+        }
+        $redisHost = (string) env('REDIS_HOST');
+        $redisPort = (string) env('REDIS_PORT');
+        if (($redisHost === 'redis' && $redisPort !== '6379') || ($redisHost !== 'redis' && $redisPort !== '6390')) {
+            throw new AssertionFailedError('Unsafe test environment: Redis destination');
         }
         if ((string) env('REDIS_PREFIX') !== 'link_saas_test_' || (string) env('REDIS_DB') !== '14' || (string) env('REDIS_CACHE_DB') !== '15') {
             throw new AssertionFailedError('Unsafe test environment: Redis database or prefix');

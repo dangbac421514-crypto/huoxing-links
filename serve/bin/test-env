@@ -20,9 +20,10 @@ cd "$(dirname "$0")/.."
 : "${CACHE_DRIVER:=array}"
 : "${MAIL_MAILER:=array}"
 : "${QUEUE_CONNECTION:=sync}"
+: "${TEST_ENV_SENTINEL:=link_saas_test_wrapper}"
 export APP_ENV DB_CONNECTION DB_HOST DB_PORT APP_KEY APP_VISITOR_HASH_KEY APP_VISITOR_TOKEN_KEY DB_DATABASE DB_USERNAME DB_PASSWORD
 export REDIS_HOST REDIS_PORT REDIS_DB REDIS_CACHE_DB REDIS_PREFIX
-export CACHE_STORE CACHE_DRIVER MAIL_MAILER QUEUE_CONNECTION
+export CACHE_STORE CACHE_DRIVER MAIL_MAILER QUEUE_CONNECTION TEST_ENV_SENTINEL
 
 # Collision 7 forwards a trailing `-v` to PHPUnit 10, which no longer accepts
 # that short option. Keep the brief's command form usable without changing
