@@ -66,7 +66,7 @@ final class LinkAccessPolicyTest extends TestCase
         $this->assertSame(LinkError::LINK_TYPE_UNSUPPORTED, app(LinkAccessPolicy::class)->check($link, $at)->errorCode);
     }
 
-    public function test_disabled_owner_membership_failure_and_known_disallowed_type_are_distinct(): void
+    public function test_disabled_owner_is_rejected_but_membership_and_package_do_not_gate_cards(): void
     {
         $at = CarbonImmutable::parse('2026-09-02 12:00:00', 'Asia/Shanghai');
         $owner = $this->activeMemberWithUvLimit(10);
@@ -88,10 +88,11 @@ final class LinkAccessPolicyTest extends TestCase
         $owner->vipPackage->update(['config' => array_merge($owner->vipPackage->config, [
             'allow_type' => array_replace(array_fill_keys(LinkType::getAllType(), false), ['MINI_PROGRAM' => true]),
         ])]);
-        $this->assertSame(LinkError::LINK_TYPE_FORBIDDEN, app(LinkAccessPolicy::class)->check($link->fresh(), $at)->errorCode);
+        $this->assertTrue(app(LinkAccessPolicy::class)->check($link->fresh(), $at)->allowed);
 
         $owner->vipPackage->update(['config' => ['invalid' => true]]);
-        $this->assertSame(LinkError::MEMBERSHIP_EXPIRED, app(LinkAccessPolicy::class)->check($link->fresh(), $at)->errorCode);
+        $owner->forceFill(['vip_id' => null, 'start_at' => null, 'end_at' => null])->save();
+        $this->assertTrue(app(LinkAccessPolicy::class)->check($link->fresh(), $at)->allowed);
     }
 
     public function test_only_true_integers_and_canonical_integer_strings_are_link_types(): void

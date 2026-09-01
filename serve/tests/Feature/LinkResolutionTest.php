@@ -125,7 +125,7 @@ final class LinkResolutionTest extends TestCase
         $this->assertTrue(Str::isUuid((string) $link->fresh()->target_version));
     }
 
-    public function test_target_cache_hit_skips_second_resolver_but_logs_each_visitor_and_consumes_unique_uv(): void
+    public function test_target_cache_hit_skips_second_resolver_and_logs_each_visit_without_quota_rows(): void
     {
         $link = $this->miniProgramLink();
         $generator = new class implements MiniProgramSchemeGenerator
@@ -158,7 +158,7 @@ final class LinkResolutionTest extends TestCase
 
         $this->assertSame(1, $generator->calls);
         $this->assertSame(3, LinkVisitLog::query()->where('link_id', $link->id)->count());
-        $this->assertSame(2, (int) UsagePeriod::query()->where('user_id', $link->user_id)->value('used_uv'));
+        $this->assertDatabaseMissing('usage_periods', ['user_id' => $link->user_id]);
     }
 
     public function test_target_cache_uses_update_version_and_never_contains_public_or_secret_values(): void
@@ -218,7 +218,7 @@ final class LinkResolutionTest extends TestCase
         $this->assertSame('link-target:v1:'.$link->id.':1:'.$revision, app(PublicTargetCache::class)->key($link));
     }
 
-    public function test_invalid_cached_mini_targets_are_deleted_and_re_resolved_without_second_uv(): void
+    public function test_invalid_cached_mini_targets_are_deleted_and_re_resolved_without_quota_rows(): void
     {
         $maliciousTargets = [
             'javascript:alert(1)',
@@ -256,7 +256,7 @@ final class LinkResolutionTest extends TestCase
             $expectedCalls++;
             $this->assertSame($expectedCalls, $generator->calls, 'resolver call count for '.$maliciousTarget);
             $this->assertSame(1, LinkVisitLog::query()->where('link_id', $link->id)->count());
-            $this->assertSame(1, (int) UsagePeriod::query()->where('user_id', $link->user_id)->value('used_uv'));
+            $this->assertDatabaseMissing('usage_periods', ['user_id' => $link->user_id]);
         }
     }
 
@@ -307,7 +307,7 @@ final class LinkResolutionTest extends TestCase
         $response->assertStatus(502)->assertJsonPath('code', 'MINI_PROGRAM_EXTERNAL_ERROR');
         $this->assertFalse(Cache::store('redis')->has($cache->key($link)));
         $this->assertDatabaseMissing('link_visit_logs', ['link_id' => $link->id]);
-        $this->assertSame(1, (int) UsagePeriod::query()->where('user_id', $link->user_id)->value('used_uv'));
+        $this->assertDatabaseMissing('usage_periods', ['user_id' => $link->user_id]);
     }
 
     public function test_landing_target_and_show_qr_reuse_the_first_selection_without_second_uv_or_visit_log(): void
@@ -508,10 +508,10 @@ final class LinkResolutionTest extends TestCase
             ->assertJsonStructure(['code', 'message'])
             ->assertCookie('visitor_id');
         $this->assertDatabaseMissing('link_visit_logs', ['link_id' => $link->id]);
-        $this->assertSame(1, (int) UsagePeriod::query()->where('user_id', $link->user_id)->value('used_uv'));
+        $this->assertDatabaseMissing('usage_periods', ['user_id' => $link->user_id]);
     }
 
-    public function test_quota_refusal_maps_to_429_and_existing_visitor_remains_allowed(): void
+    public function test_card_jump_ignores_package_uv_quota_for_new_and_existing_visitors(): void
     {
         $link = $this->miniProgramLink();
         $package = $link->user->vipPackage;
@@ -529,17 +529,14 @@ final class LinkResolutionTest extends TestCase
         $first = $this->getJson('/api/link-target/'.$link->code)->assertOk();
         $second = $this->getJson('/api/link-target/'.$link->code);
 
-        $second->assertStatus(429)
-            ->assertJsonPath('code', 'QUOTA_EXCEEDED')
-            ->assertJsonStructure(['code', 'message'])
-            ->assertCookie('visitor_id');
+        $second->assertOk()->assertJsonPath('code', 0);
         $visitorCookie = $first->headers->getCookies()[0]->getValue();
         $this->withUnencryptedCookies(['visitor_id' => $visitorCookie])
             ->withCredentials()
             ->getJson('/api/link-target/'.$link->code)
             ->assertOk();
-        $this->assertSame(1, (int) UsagePeriod::query()->where('user_id', $link->user_id)->value('used_uv'));
-        $this->assertSame(2, LinkVisitLog::query()->where('link_id', $link->id)->count());
+        $this->assertDatabaseMissing('usage_periods', ['user_id' => $link->user_id]);
+        $this->assertSame(3, LinkVisitLog::query()->where('link_id', $link->id)->count());
     }
 
     public function test_all_six_public_target_paths_return_only_their_common_safe_shape(): void
@@ -611,7 +608,7 @@ final class LinkResolutionTest extends TestCase
         }
     }
 
-    public function test_valid_mini_provider_failure_consumes_uv_returns_502_cookie_and_no_log(): void
+    public function test_valid_mini_provider_failure_returns_502_cookie_no_log_or_quota_row(): void
     {
         $link = $this->miniProgramLink();
         app()->instance(MiniProgramSchemeGenerator::class, new class implements MiniProgramSchemeGenerator
@@ -628,7 +625,7 @@ final class LinkResolutionTest extends TestCase
             ->assertJsonPath('code', 'MINI_PROGRAM_EXTERNAL_ERROR')
             ->assertCookie('visitor_id');
         $this->assertDatabaseMissing('link_visit_logs', ['link_id' => $link->id]);
-        $this->assertSame(1, (int) UsagePeriod::query()->where('user_id', $link->user_id)->value('used_uv'));
+        $this->assertDatabaseMissing('usage_periods', ['user_id' => $link->user_id]);
         $this->assertStringNotContainsString('provider secret', $response->getContent());
     }
 

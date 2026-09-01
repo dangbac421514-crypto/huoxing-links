@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\DTO\AccessDecision;
-use App\Exceptions\BusinessRuleException;
 use App\Models\Link;
 use App\Models\User;
 use App\Support\LinkError;
@@ -12,8 +11,6 @@ use Carbon\CarbonImmutable;
 
 final class LinkAccessPolicy
 {
-    public function __construct(private readonly EntitlementService $entitlements) {}
-
     public function check(?Link $link, CarbonImmutable $at): AccessDecision
     {
         if (! $link) {
@@ -29,21 +26,9 @@ final class LinkAccessPolicy
             return AccessDecision::deny(LinkError::USER_DISABLED);
         }
 
-        try {
-            // The foundation service is the only source of current membership
-            // state and rolling-period entitlements.
-            $snapshot = $this->entitlements->assertActive($owner, $at);
-        } catch (BusinessRuleException) {
-            return AccessDecision::deny(LinkError::MEMBERSHIP_EXPIRED);
-        }
-
         $type = LinkTypeParser::parse($link->getRawOriginal('type'));
         if (! $type) {
             return AccessDecision::deny(LinkError::LINK_TYPE_UNSUPPORTED);
-        }
-
-        if (! in_array('*', $snapshot->allowTypes, true) && ! in_array($type->name, $snapshot->allowTypes, true)) {
-            return AccessDecision::deny(LinkError::LINK_TYPE_FORBIDDEN);
         }
 
         return AccessDecision::allow();

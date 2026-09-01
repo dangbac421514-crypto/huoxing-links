@@ -245,9 +245,7 @@ SUVORK5CYII=" />
                 点击立即前往微信
             </button>
         </div>
-        <div class="jump-tip" style="padding-bottom: 30px;">
-            火星智慧引流提供技术服务
-        </div>
+        <div class="jump-tip" style="padding-bottom: 30px;">正在安全跳转</div>
     </div>
     <script type="text/javascript">
         var targetResponse = undefined;
@@ -258,12 +256,12 @@ SUVORK5CYII=" />
                     return response.json();
                 })
                 .then(function(data) {
-                    if (data.message) {
-                        document.querySelector('#jump-btn').innerText = data.message;
+                    if (!data || data.code !== 0 || !data.data || !data.data.target) {
+                        document.querySelector('#jump-btn').innerText = (data && data.message) || '链接暂不可用';
                         document.querySelector('#jump-btn').classList.add('btn-disable');
                     } else {
-                        window.parent.postMessage(data, '*');
-                        targetResponse = data;
+                        window.parent.postMessage(data.data, window.location.origin);
+                        targetResponse = data.data;
                         jump();
                     }
                 })

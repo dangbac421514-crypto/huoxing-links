@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Enums\UserType;
-use App\Exceptions\BusinessRuleException;
 use App\Exceptions\MiniProgramForbidden;
 use App\Models\MiniProgram;
 use App\Models\User;
@@ -11,8 +10,6 @@ use Illuminate\Support\Facades\Log;
 
 final class MiniProgramReferencePolicy
 {
-    public function __construct(private readonly EntitlementService $entitlements) {}
-
     public function assertAllowed(User $actor, int $miniId): MiniProgram
     {
         $mini = MiniProgram::query()->find($miniId);
@@ -37,16 +34,6 @@ final class MiniProgramReferencePolicy
         }
 
         if (! (bool) $mini->getAttribute('is_pre_min')) {
-            throw new MiniProgramForbidden;
-        }
-
-        try {
-            $snapshot = $this->entitlements->assertActive($actor);
-        } catch (BusinessRuleException) {
-            throw new MiniProgramForbidden;
-        }
-
-        if (! $snapshot->allowsOfficialMiniProgramPool()) {
             throw new MiniProgramForbidden;
         }
 

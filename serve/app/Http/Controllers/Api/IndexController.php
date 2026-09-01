@@ -105,7 +105,7 @@ class IndexController extends Controller
     }
 
     // 系统配置
-    public function config(EntitlementService $entitlements): JsonResponse
+    public function config(): JsonResponse
     {
         $configs = [
             'code_mode' => SystemConfig::get('send_code_mode'),
@@ -120,15 +120,11 @@ class IndexController extends Controller
 
         $user = auth('api')->user();
         if ($user) {
-            $snapshot = $entitlements->resolve($user);
             // 安全域名
             // $configs['domains'] = Domain::query()->where('enable', true)->get(['id', 'title']);
-            // 小程序 (区分是否有权限使用平台小程序池)
+            // 卡片跳转专用版：已有账号都可使用自己的和官方小程序池。
             $configs['mini_programs'] = MiniProgram::query()
-                ->where(
-                    fn ($query) => $query->where('user_id', $user->id)
-                        ->when($snapshot->allowsOfficialMiniProgramPool(), fn ($query) => $query->orWhere('is_pre_min', true))
-                )
+                ->where(fn ($query) => $query->where('user_id', $user->id)->orWhere('is_pre_min', true))
                 ->get(['id', 'name']);
         }
 

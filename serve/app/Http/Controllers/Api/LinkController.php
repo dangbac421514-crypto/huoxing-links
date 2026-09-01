@@ -10,12 +10,10 @@ use App\Exceptions\BusinessRuleException;
 use App\Exceptions\LinkResolutionException;
 use App\Exceptions\MiniProgramForbidden;
 use App\Models\Link;
-use App\Services\EntitlementService;
 use App\Services\LinkAccessPolicy;
 use App\Services\LinkShareUrl;
 use App\Services\MiniProgramReferencePolicy;
 use App\Services\QrRotationService;
-use App\Support\LinkError;
 use App\Support\LinkTypeParser;
 use Carbon\CarbonImmutable;
 use Closure;
@@ -74,31 +72,6 @@ class LinkController extends FormController
             $type = LinkTypeParser::parse(request()->input('type'));
             if (! $type) {
                 return false;
-            }
-
-            $snapshot = null;
-            if (! $this->isAdmin($actor)) {
-                $snapshot = app(EntitlementService::class)->assertActive(
-                    $actor,
-                    CarbonImmutable::now('Asia/Shanghai'),
-                );
-                if (! in_array('*', $snapshot->allowTypes, true) && ! in_array($type->name, $snapshot->allowTypes, true)) {
-                    throw new BusinessRuleException(LinkError::LINK_TYPE_FORBIDDEN, '当前套餐不支持该类型链接！');
-                }
-                if ($form->isCreate() && $snapshot->linkLimit <= Link::query()->where('user_id', $actor->id)->count()) {
-                    throw new BusinessRuleException('LINK_LIMIT_EXCEEDED', '拥有的链接数量已达上限！');
-                }
-                if (
-                    $type === LinkType::LANDING_MINI
-                    && ! $snapshot->curIndex
-                    && (
-                        data_get($form->safeFormData, 'config.wx.avatar')
-                        || data_get($form->safeFormData, 'config.wx.title')
-                        || data_get($form->safeFormData, 'config.wx.sub_title')
-                    )
-                ) {
-                    throw new BusinessRuleException('CUSTOM_LANDING_FORBIDDEN', '当前套餐不允许自定义落地页！');
-                }
             }
 
             if (in_array($type, [LinkType::MINI_PROGRAM, LinkType::LANDING_MINI], true)) {

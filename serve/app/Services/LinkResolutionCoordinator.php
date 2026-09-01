@@ -89,7 +89,6 @@ final class LinkResolutionCoordinator
     public function __construct(
         private readonly LinkAccessPolicy $policy,
         private readonly VisitorIdentityService $identity,
-        private readonly UsageMeter $usageMeter,
         private readonly TargetResolverRegistry $resolvers,
         private readonly LandingSelectionStore $selections,
         private readonly VisitorTokenService $tokens,
@@ -126,9 +125,6 @@ final class LinkResolutionCoordinator
             if (! $owner) {
                 throw new LinkResolutionException(LinkError::USER_DISABLED, '账号已停用', 403);
             }
-
-            // Account UV is intentionally consumed before cache/provider work.
-            $this->usageMeter->consume($owner, $identity->visitorId, $at);
 
             $type = LinkTypeParser::parse($link->getRawOriginal('type'));
             if (! $type) {

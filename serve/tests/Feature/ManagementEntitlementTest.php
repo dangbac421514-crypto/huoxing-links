@@ -45,7 +45,7 @@ final class ManagementEntitlementTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_expired_member_cannot_create_a_link_before_expiry_projection_runs(): void
+    public function test_existing_account_can_create_a_link_without_membership_gate(): void
     {
         $domain = Domain::query()->create(['url' => 'https://share.example.test', 'title' => 'share', 'enable' => true]);
         Sanctum::actingAs($this->member, ['*'], 'api');
@@ -61,11 +61,11 @@ final class ManagementEntitlementTest extends TestCase
             ],
         ]);
 
-        $response->assertStatus(422)->assertJsonPath('code', 'MEMBERSHIP_EXPIRED');
-        $this->assertDatabaseCount('links', 0);
+        $response->assertCreated();
+        $this->assertDatabaseHas('links', ['user_id' => $this->member->id, 'title' => 'expired link']);
     }
 
-    public function test_expired_member_cannot_create_a_mini_program_or_read_the_official_pool(): void
+    public function test_existing_account_can_create_a_mini_program_and_read_the_official_pool(): void
     {
         MiniProgram::query()->create([
             'name' => 'official pool',
@@ -87,13 +87,13 @@ final class ManagementEntitlementTest extends TestCase
             'type' => MiniType::OWN->value,
             'is_enable' => true,
         ]);
-        $create->assertStatus(422)->assertJsonPath('code', 'MEMBERSHIP_EXPIRED');
+        $create->assertCreated();
 
         $pool = $this->getJson('/api/min-programs');
-        $pool->assertStatus(422)->assertJsonPath('code', 'MEMBERSHIP_EXPIRED');
+        $pool->assertOk()->assertJsonFragment(['name' => 'official pool']);
     }
 
-    public function test_expired_member_home_config_does_not_include_the_official_pool_but_admin_still_can_manage(): void
+    public function test_existing_account_home_config_includes_the_official_pool_and_admin_can_manage(): void
     {
         MiniProgram::query()->create([
             'name' => 'official pool',
@@ -107,8 +107,8 @@ final class ManagementEntitlementTest extends TestCase
         ]);
         Sanctum::actingAs($this->member, ['*'], 'api');
 
-        $config = $this->getJson('/api/config')->assertOk()->json('data');
-        $this->assertSame([], $config['mini_programs'] ?? []);
+        $config = $this->getJson('/api/config')->assertOk()->json();
+        $this->assertSame('official pool', $config['mini_programs'][0]['name'] ?? null);
 
         Sanctum::actingAs($this->admin, ['*'], 'api');
         $domain = Domain::query()->create(['url' => 'https://share.example.test', 'title' => 'share', 'enable' => true]);
