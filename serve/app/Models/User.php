@@ -2,12 +2,12 @@
 
 namespace App\Models;
 
+use App\Contracts\ReferralCodeGenerator;
 use App\Enums\UserType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 use Ugly\Base\Casts\Amount;
 use Ugly\Base\Traits\SearchModel;
@@ -39,8 +39,9 @@ class User extends Authenticatable
                 return;
             }
 
+            $generator = app(ReferralCodeGenerator::class);
             do {
-                $code = Str::upper(Str::random(8));
+                $code = $generator->generate();
             } while (self::query()->where('referral_code', $code)->exists());
 
             $user->referral_code = $code;

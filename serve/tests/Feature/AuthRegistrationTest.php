@@ -2,13 +2,16 @@
 
 namespace Tests\Feature;
 
+use App\Contracts\ReferralCodeGenerator;
 use App\Enums\UserType;
 use App\Models\User;
 use App\Models\VipLogs;
 use App\Models\VipPackage;
 use App\Services\AdminProvisioner;
+use App\Services\MembershipService;
 use App\Services\RegistrationService;
 use App\Services\SystemConfig;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
@@ -208,8 +211,65 @@ final class AuthRegistrationTest extends TestCase
         $this->assertNull($user->parent_id);
     }
 
+    public function test_registration_retries_an_exact_referral_code_collision(): void
+    {
+        User::factory()->create(['referral_code' => 'COLLIDE1']);
+        $generator = new SequenceReferralCodeGenerator(['COLLIDE1', 'FRESH01']);
+        $service = new RegistrationService(app(MembershipService::class), $generator);
+
+        $user = $service->register('13800000010', 'password', null);
+
+        $this->assertSame('FRESH01', $user->referral_code);
+        $this->assertSame(2, $generator->calls());
+    }
+
+    public function test_duplicate_username_does_not_retry_referral_generation(): void
+    {
+        User::factory()->create(['username' => '13800000011']);
+        $generator = new SequenceReferralCodeGenerator(['FIRST01', 'SECOND1']);
+        $service = new RegistrationService(app(MembershipService::class), $generator);
+
+        $this->expectException(ValidationException::class);
+        try {
+            $service->register('13800000011', 'password', null);
+        } finally {
+            $this->assertSame(1, $generator->calls());
+        }
+    }
+
+    public function test_unrelated_database_error_is_not_misclassified_as_username_or_referral_conflict(): void
+    {
+        $generator = new SequenceReferralCodeGenerator([str_repeat('X', 256)]);
+        $service = new RegistrationService(app(MembershipService::class), $generator);
+
+        $this->expectException(QueryException::class);
+        $service->register('13800000012', 'password', null);
+    }
+
     private function authWithToken(string $token): self
     {
         return $this->withHeader('Authorization', 'Bearer '.$token);
+    }
+}
+
+final class SequenceReferralCodeGenerator implements ReferralCodeGenerator
+{
+    private int $attempts = 0;
+
+    /**
+     * @param  array<int, string>  $codes
+     */
+    public function __construct(private array $codes) {}
+
+    public function generate(): string
+    {
+        $this->attempts++;
+
+        return array_shift($this->codes) ?? 'FALLBACK1';
+    }
+
+    public function calls(): int
+    {
+        return $this->attempts;
     }
 }
