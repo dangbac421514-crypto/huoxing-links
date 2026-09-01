@@ -5,14 +5,34 @@ namespace App\DTO;
 /** Public, secret-free result produced by a later target resolver. */
 final readonly class TargetResult
 {
+    public string $title;
+
+    public string $description;
+
+    public ?string $icon;
+
+    public string $target;
+
+    /** @var ?array<string, scalar|null> */
+    public ?array $qr;
+
+    public ?string $visitorToken;
+
     public function __construct(
-        public string $title,
-        public string $description,
-        public ?string $icon,
-        public string $target,
-        public ?array $qr = null,
-        public ?string $visitorToken = null,
-    ) {}
+        string $title,
+        string $description,
+        ?string $icon,
+        string $target,
+        ?array $qr = null,
+        ?string $visitorToken = null,
+    ) {
+        $this->title = $title;
+        $this->description = $description;
+        $this->icon = $icon;
+        $this->target = $target;
+        $this->qr = self::safeQr($qr);
+        $this->visitorToken = $visitorToken;
+    }
 
     /** @param array<string, mixed> $attributes */
     public static function from(array $attributes): self

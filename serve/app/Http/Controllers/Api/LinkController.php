@@ -147,6 +147,15 @@ class LinkController extends FormController
         return $this->success($this->publicLink($link));
     }
 
+    public function update($id): JsonResponse
+    {
+        // Scope the resource before FormService validates or evaluates any
+        // business payload, so foreign tenants cannot probe validation state.
+        $this->scopedQuery()->findOrFail($id);
+
+        return parent::update($id);
+    }
+
     public function status(Request $request, int $id): JsonResponse
     {
         $payload = $request->json()->all();
@@ -167,10 +176,9 @@ class LinkController extends FormController
     {
         $link = $this->scopedQuery()->find($id);
         if (! $link) {
-            if ($this->isAdmin(auth('api')->user()) || ! Link::query()->whereKey($id)->exists()) {
-                return response()->json(null, Response::HTTP_NO_CONTENT);
-            }
-            abort(Response::HTTP_NOT_FOUND);
+            // Keep the delete endpoint non-enumerating: foreign and absent
+            // rows share the same idempotent response.
+            return response()->json(null, Response::HTTP_NO_CONTENT);
         }
 
         $link->delete();
@@ -197,12 +205,23 @@ class LinkController extends FormController
     /** @return array<string, mixed> */
     private function publicLink(Link $link): array
     {
-        $data = $link->toArray();
+        $decision = app(LinkAccessPolicy::class)->check($link, CarbonImmutable::now('Asia/Shanghai'));
+        $rawType = $link->getRawOriginal('type');
+        $knownType = is_numeric($rawType) && LinkType::tryFrom((int) $rawType) !== null;
+        if ($knownType) {
+            $data = $link->toArray();
+        } else {
+            // Eloquent enum casts throw ValueError for dirty legacy values;
+            // serialize raw, non-secret fields explicitly for this boundary.
+            $data = $link->getAttributes();
+            $data['type'] = is_numeric($rawType) ? (int) $rawType : null;
+            $data['config'] = is_string($data['config'] ?? null)
+                ? (json_decode($data['config'], true) ?: [])
+                : (is_array($data['config'] ?? null) ? $data['config'] : []);
+        }
         $data['manual_status'] = (bool) $link->manual_status;
         $data['health_status'] = (bool) $link->health_status;
-        $data['effective_status'] = app(LinkAccessPolicy::class)
-            ->check($link, CarbonImmutable::now('Asia/Shanghai'))
-            ->allowed;
+        $data['effective_status'] = $decision->allowed && $knownType;
         try {
             $data['share_link'] = app(LinkShareUrl::class)->for($link);
         } catch (LinkResolutionException $exception) {

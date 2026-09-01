@@ -28,4 +28,19 @@ final class TargetResultTest extends TestCase
         $this->assertObjectNotHasProperty('params', $result);
         $this->assertStringNotContainsString('must-not-be-copied', json_encode($result, JSON_THROW_ON_ERROR));
     }
+
+    public function test_direct_constructor_also_removes_nested_secret_fields(): void
+    {
+        $result = new TargetResult(
+            'Example',
+            'Description',
+            null,
+            'weixin://dl/example',
+            ['path' => '/qr.png', 'secret' => 'must-not-be-copied', 'params' => ['token' => 'hidden']],
+        );
+
+        $this->assertSame(['path' => '/qr.png'], $result->qr);
+        $this->assertStringNotContainsString('must-not-be-copied', json_encode($result, JSON_THROW_ON_ERROR));
+        $this->assertStringNotContainsString('hidden', json_encode($result, JSON_THROW_ON_ERROR));
+    }
 }
