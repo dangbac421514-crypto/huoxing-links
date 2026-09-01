@@ -144,7 +144,7 @@ Complete `packages` inventory (development-only `packages-dev` excluded):
 come from its root importer, including peer suffixes where present.
 
 | Package | Manifest range | Resolved lock version | License |
-| --- | --- | --- |
+| --- | --- | --- | --- |
 | @amap/amap-jsapi-loader | ^1.0.1 | 1.0.1 | MIT |
 | @element-plus/icons-vue | ^2.1.0 | 2.1.0 (vue 3.3.4) | MIT |
 | @vueuse/core | ^10.9.0 | 10.9.0 (vue 3.3.4) | MIT |

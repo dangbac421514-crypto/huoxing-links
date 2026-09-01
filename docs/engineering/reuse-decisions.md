@@ -3,9 +3,9 @@
 Baseline captured 2026-09-01 from branch `codex/full-function-implementation` at
 `5e20731` (`chore: ignore local worktrees`). The expected fork/source remotes
 are present (`origin` = `dangbac421514-crypto/huoxing-links`, `upstream` =
-`surprise-tech/huoxing-links`). The worktree also contains an unrelated,
-pre-existing untracked `admin/pnpm-workspace.yaml`; it is not part of this
-record or the baseline commit.
+`surprise-tech/huoxing-links`). An earlier `admin/pnpm-workspace.yaml` was
+non-task setup residue; the controller removed it before Task 0 acceptance and
+it was never committed.
 
 The decisions below are the approved controller rulings. Versions are target
 versions for the stabilization work, not claims that this baseline already
