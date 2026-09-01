@@ -35,4 +35,13 @@ final class ImageCaptchaServiceTest extends TestCase
         $this->assertTrue($service->verify($issued['key'], '123456'));
         $this->assertFalse($service->verify($issued['key'], '123456'));
     }
+
+    public function test_failed_verification_consumes_the_challenge(): void
+    {
+        $service = new ImageCaptchaService(new DeterministicCaptchaBuilderFactory('123456'));
+        $issued = $service->issue();
+
+        $this->assertFalse($service->verify($issued['key'], 'wrong'));
+        $this->assertFalse($service->verify($issued['key'], '123456'));
+    }
 }
