@@ -24,20 +24,21 @@ class SMSCaptchaRequest extends FormRequest
      */
     public function rules(): array
     {
-        $code_mode = SystemConfig::get('send_code_mode');
-        $rule = $code_mode == CodeMode::Email->value ? 'email' : 'regex:/^1[3-9]\d{9}$/';
-        $captchaRule = SystemConfig::get('verify_code_is_open')
-            ? ['required', 'string']
-            : ['nullable', 'string'];
-
-        return [
+        $mode = CodeMode::fromConfiguration(SystemConfig::get('send_code_mode'));
+        $rules = [
             'tel' => [
                 'required',
-                $rule,
+                $mode === CodeMode::SMS ? 'regex:/^1[3-9]\d{9}$/' : 'email',
             ],
-            'captcha' => $captchaRule,
-            'key' => $captchaRule,
+            'purpose' => ['required', 'in:register,reset_password'],
         ];
+
+        if ((bool) SystemConfig::get('verify_code_is_open')) {
+            $rules['captcha'] = ['required', 'string'];
+            $rules['key'] = ['required', 'string'];
+        }
+
+        return $rules;
     }
 
     public function messages(): array
@@ -47,6 +48,8 @@ class SMSCaptchaRequest extends FormRequest
             'tel.regex' => '手机号格式错误！',
             'tel.email' => '不是有效的邮箱！',
             'captcha.required' => '请输入验证码！',
+            'purpose.required' => '验证码用途无效！',
+            'purpose.in' => '验证码用途无效！',
         ];
     }
 }

@@ -2,7 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Contracts\EmailGateway;
 use App\Contracts\ReferralCodeGenerator;
+use App\Contracts\SmsGateway;
+use App\Enums\CodeMode;
 use App\Enums\UserType;
 use App\Models\User;
 use App\Models\VipLogs;
@@ -11,18 +14,38 @@ use App\Services\AdminProvisioner;
 use App\Services\MembershipService;
 use App\Services\RegistrationService;
 use App\Services\SystemConfig;
+use App\Services\VerificationCodeService;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Validation\ValidationException;
+use Tests\Support\FakeEmailGateway;
+use Tests\Support\FakeSmsGateway;
 use Tests\TestCase;
 
 final class AuthRegistrationTest extends TestCase
 {
+    private FakeSmsGateway $sms;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['database.redis.client' => 'predis']);
+        Redis::connection('default')->flushdb();
+        Redis::connection('cache')->flushdb();
+        SystemConfig::set([
+            'send_code_mode' => (string) CodeMode::SMS->value,
+            'verify_code_is_open' => '0',
+        ]);
+        $this->sms = new FakeSmsGateway;
+        $this->app->instance(SmsGateway::class, $this->sms);
+    }
+
     public function test_registration_binds_a_valid_referral_code_without_creating_commission_rows(): void
     {
         $parent = User::factory()->create(['type' => UserType::MEMBER, 'status' => true]);
 
-        $response = $this->postJson('/api/register', [
+        $response = $this->postRegistration([
             'username' => '13800000001',
             'password' => 'password',
             'password_confirmation' => 'password',
@@ -37,9 +60,33 @@ final class AuthRegistrationTest extends TestCase
         $this->assertSame(0, VipLogs::query()->count());
     }
 
+    public function test_registration_uses_email_recipient_in_email_mode(): void
+    {
+        SystemConfig::set(['send_code_mode' => (string) CodeMode::Email->value]);
+        $fake = new FakeEmailGateway;
+        $this->app->instance(EmailGateway::class, $fake);
+        app(VerificationCodeService::class)->send(
+            CodeMode::Email,
+            'new@example.com',
+            '203.0.113.14',
+            'register',
+            'REGISTER_EMAIL',
+        );
+
+        $response = $this->postJson('/api/register', [
+            'username' => 'new@example.com',
+            'password' => 'password',
+            'password_confirmation' => 'password',
+            'code' => $fake->lastCode('new@example.com'),
+        ]);
+
+        $response->assertOk();
+        $this->assertDatabaseHas('users', ['username' => 'new@example.com']);
+    }
+
     public function test_unknown_referral_code_is_rejected_with_validation_error(): void
     {
-        $this->postJson('/api/register', [
+        $this->postRegistration([
             'username' => '13800000002',
             'password' => 'password',
             'password_confirmation' => 'password',
@@ -51,7 +98,7 @@ final class AuthRegistrationTest extends TestCase
     {
         $parent = User::factory()->create(['status' => false]);
 
-        $this->postJson('/api/register', [
+        $this->postRegistration([
             'username' => '13800000003',
             'password' => 'password',
             'password_confirmation' => 'password',
@@ -63,7 +110,7 @@ final class AuthRegistrationTest extends TestCase
     {
         $parent = User::factory()->create(['username' => '13800000004']);
 
-        $this->postJson('/api/register', [
+        $this->postRegistration([
             'username' => $parent->username,
             'password' => 'password',
             'password_confirmation' => 'password',
@@ -75,7 +122,7 @@ final class AuthRegistrationTest extends TestCase
     {
         User::factory()->create(['username' => '13800000005']);
 
-        $this->postJson('/api/register', [
+        $this->postRegistration([
             'username' => '13800000005',
             'password' => 'password',
             'password_confirmation' => 'password',
@@ -96,7 +143,7 @@ final class AuthRegistrationTest extends TestCase
         ]);
         SystemConfig::set('give_vip_id', (string) $package->id);
 
-        $this->postJson('/api/register', [
+        $this->postRegistration([
             'username' => '13800000006',
             'password' => 'password',
             'password_confirmation' => 'password',
@@ -283,6 +330,21 @@ final class AuthRegistrationTest extends TestCase
     private function authWithToken(string $token): self
     {
         return $this->withHeader('Authorization', 'Bearer '.$token);
+    }
+
+    private function postRegistration(array $payload): mixed
+    {
+        $username = (string) ($payload['username'] ?? '');
+        app(VerificationCodeService::class)->send(
+            CodeMode::SMS,
+            $username,
+            '203.0.113.15',
+            'register',
+            'REGISTER_TEMPLATE',
+        );
+        $payload['code'] ??= $this->sms->lastCode($username);
+
+        return $this->postJson('/api/register', $payload);
     }
 }
 

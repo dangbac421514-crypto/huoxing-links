@@ -33,8 +33,8 @@ class LoginRequest extends FormRequest
         ];
         $is_open = SystemConfig::get('verify_code_is_open');
         if ($is_open) {
-            $code_mode = SystemConfig::get('send_code_mode');
-            $rule = $code_mode == CodeMode::Email->value ? 'email' : 'regex:/^1[3-9]\d{9}$/';
+            $mode = CodeMode::fromConfiguration(SystemConfig::get('send_code_mode'));
+            $rule = $mode === CodeMode::Email ? 'email' : 'regex:/^1[3-9]\d{9}$/';
 
             $rules['username'] = [
                 'required',

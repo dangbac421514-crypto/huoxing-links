@@ -2,8 +2,10 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\CodeMode;
+use App\Services\SystemConfig;
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Support\Facades\Cache;
 
 class ResetPasswordRequest extends FormRequest
 {
@@ -18,35 +20,37 @@ class ResetPasswordRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
+        $mode = CodeMode::fromConfiguration(SystemConfig::get('send_code_mode'));
+
         return [
-            'username' => 'required|regex:/^1[3-9]\d{9}$/|exists:users,username',
+            'username' => [
+                'required',
+                $mode === CodeMode::SMS ? 'regex:/^1[3-9]\d{9}$/' : 'email',
+                'exists:users,username',
+            ],
             'password' => 'required|min:6|confirmed',
-            'captcha' => ['required', function (string $attribute, mixed $value, \Closure $fail) {
-                $test_code = config('services.ali_sms.test_code');
-                if (empty($test_code) || $value != $test_code) {
-                    $tel = $this->input('username');
-                    $captcha = Cache::get('sms_captcha_'.$tel);
-                    if ((int) $captcha !== (int) $value) {
-                        $fail('验证码错误！');
-                    }
-                }
-            }],
+            'code' => ['required', 'digits:6'],
         ];
     }
 
     public function messages(): array
     {
+        $mode = CodeMode::fromConfiguration(SystemConfig::get('send_code_mode'));
+        $txt = $mode === CodeMode::Email ? '邮箱' : '手机号';
+
         return [
-            'username.required' => '请输入手机号！',
+            'username.required' => "请输入{$txt}！",
             'username.regex' => '手机号格式错误！',
+            'username.email' => '不是有效的邮箱！',
             'password.required' => '请输入密码！',
             'password.min' => '密码不少于6位！',
             'password.confirmed' => '密码不一致！',
-            'captcha.required' => '请输入短信验证码！',
+            'code.required' => '请输入验证码！',
+            'code.digits' => '验证码格式错误！',
         ];
     }
 }

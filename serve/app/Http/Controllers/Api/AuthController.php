@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\CodeMode;
 use App\Enums\UserType;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ChangePasswordRequest;
@@ -15,8 +16,11 @@ use App\Models\User;
 use App\Models\VipPackage;
 use App\PayChannels\WeChatPayNative;
 use App\Services\RegistrationService;
+use App\Services\SystemConfig;
+use App\Services\VerificationCodeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Ugly\Base\Models\Payment;
 use Ugly\Base\Traits\ApiResource;
@@ -43,22 +47,42 @@ class AuthController extends Controller
     }
 
     // 注册
-    public function register(RegisterRequest $request): JsonResponse
+    public function register(RegisterRequest $request, VerificationCodeService $codes): JsonResponse
     {
-        app(RegistrationService::class)->register(
-            $request->string('username')->toString(),
-            $request->string('password')->toString(),
-            $request->input('referral_code'),
-        );
+        DB::transaction(function () use ($request, $codes): void {
+            $mode = CodeMode::fromConfiguration(SystemConfig::get('send_code_mode'));
+            $codes->consume(
+                $mode,
+                $request->string('username')->toString(),
+                $request->ip(),
+                'register',
+                $request->string('code')->toString(),
+            );
+            app(RegistrationService::class)->register(
+                $request->string('username')->toString(),
+                $request->string('password')->toString(),
+                $request->input('referral_code'),
+            );
+        });
 
         return $this->success();
     }
 
     // 重置密码
-    public function resetPassword(ResetPasswordRequest $request): JsonResponse
+    public function resetPassword(ResetPasswordRequest $request, VerificationCodeService $codes): JsonResponse
     {
-        User::query()->where('username', $request->input('username'))
-            ->update(['password' => bcrypt($request->input('password'))]);
+        DB::transaction(function () use ($request, $codes): void {
+            $mode = CodeMode::fromConfiguration(SystemConfig::get('send_code_mode'));
+            $codes->consume(
+                $mode,
+                $request->string('username')->toString(),
+                $request->ip(),
+                'reset_password',
+                $request->string('code')->toString(),
+            );
+            User::query()->where('username', $request->input('username'))
+                ->update(['password' => Hash::make($request->input('password'))]);
+        });
 
         return $this->success();
     }

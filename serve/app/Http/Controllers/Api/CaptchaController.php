@@ -3,14 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\CodeMode;
+use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SMSCaptchaRequest;
-use App\Jobs\SendEmailJobs;
-use App\Services\AliDySms;
 use App\Services\ImageCaptchaService;
 use App\Services\SystemConfig;
+use App\Services\VerificationCodeService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Cache;
 use Ugly\Base\Traits\ApiResource;
 
 class CaptchaController extends Controller
@@ -24,25 +23,32 @@ class CaptchaController extends Controller
     }
 
     // 短信验证码
-    public function sms(SMSCaptchaRequest $request): JsonResponse
-    {
-        $tel = $request->input('tel');
-        $captcha = Cache::get('sms_captcha_'.$tel);
-        if ($captcha) {
-            return $this->failed('请勿重复发送！');
-        }
-        $captcha = rand(1000, 9999);
-        $code_mode = SystemConfig::get('send_code_mode');
-
-        if ($code_mode == CodeMode::SMS->value) {
-            // 短信验证码
-            (new AliDySms)->captcha($captcha, $tel);
-        } elseif ($code_mode == CodeMode::Email->value) {
-            // 邮箱验证码
-            SendEmailJobs::dispatch($tel, $captcha);
+    public function sms(
+        SMSCaptchaRequest $request,
+        VerificationCodeService $codes,
+        ImageCaptchaService $images,
+    ): JsonResponse {
+        $mode = CodeMode::fromConfiguration(SystemConfig::get('send_code_mode'));
+        if ((bool) SystemConfig::get('verify_code_is_open')
+            && ! $images->verify(
+                $request->string('key')->toString(),
+                $request->string('captcha')->toString(),
+            )) {
+            throw new BusinessRuleException('IMAGE_CAPTCHA_INVALID', '图片验证码错误');
         }
 
-        Cache::put('sms_captcha_'.$tel, $captcha, now()->addMinute());
+        $template = (string) config(
+            $mode === CodeMode::SMS
+                ? 'services.ali_sms.template_code'
+                : 'services.mail.template_code',
+        );
+        $codes->send(
+            $mode,
+            $request->string('tel')->toString(),
+            $request->ip(),
+            $request->string('purpose')->toString(),
+            $template,
+        );
 
         return $this->success([]);
     }

@@ -46,6 +46,11 @@ return [
             'local_domain' => env('MAIL_EHLO_DOMAIN'),
         ],
 
+        // Populated only for the duration of an outbound verification email.
+        'runtime_smtp' => [
+            'transport' => 'smtp',
+        ],
+
         'ses' => [
             'transport' => 'ses',
         ],
