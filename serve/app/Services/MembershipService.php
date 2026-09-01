@@ -287,42 +287,39 @@ final class MembershipService
 
     public function expireDue(CarbonImmutable $at): int
     {
-        $ids = VipLogs::query()
-            ->where('status', VipStatus::ACTIVE)
+        $ids = User::query()
+            ->whereNotNull('vip_id')
+            ->whereNotNull('start_at')
+            ->whereNotNull('end_at')
             ->where('end_at', '<=', $at)
             ->pluck('id');
         $processed = 0;
 
         foreach ($ids as $id) {
             $processed += DB::transaction(function () use ($id, $at): int {
-                $candidate = VipLogs::query()->find($id);
-                if (! $candidate) {
+                $user = User::query()->lockForUpdate()->find($id);
+                if (! $user || ! $user->vip_id || ! $user->start_at || ! $user->end_at) {
                     return 0;
                 }
-                $user = User::query()->lockForUpdate()->find($candidate->user_id);
-                if (! $user) {
+                $userEnd = $this->immutableDate($user->end_at);
+                if ($this->compareDates($userEnd, $at) > 0) {
                     return 0;
                 }
-                $log = VipLogs::query()->lockForUpdate()->find($id);
-                if (! $log || $log->status !== VipStatus::ACTIVE) {
-                    return 0;
-                }
-                $logEnd = $this->immutableDate($log->end_at);
-                $logStart = $this->immutableDate($log->start_at);
-                if ($logEnd->gt($at)) {
-                    return 0;
-                }
-                if (
-                    $user->vip_id !== $log->vip_id
-                    || ! $user->start_at
-                    || ! $user->end_at
-                    || ! $this->immutableDate($user->start_at)->equalTo($logStart)
-                    || ! $this->immutableDate($user->end_at)->equalTo($logEnd)
-                ) {
-                    $log->forceFill(['status' => VipStatus::EXPIRED])->save();
 
+                $idempotencyKey = 'vip-expired:'.$user->id.':'.$userEnd->format('Y-m-d H:i:s');
+                if (VipLogs::query()->where('idempotency_key', $idempotencyKey)->exists()) {
                     return 0;
                 }
+
+                $log = VipLogs::query()
+                    ->where('user_id', $user->id)
+                    ->where('status', VipStatus::ACTIVE)
+                    ->where('vip_id', $user->vip_id)
+                    ->where('start_at', $user->start_at)
+                    ->where('end_at', $user->end_at)
+                    ->lockForUpdate()
+                    ->orderByDesc('id')
+                    ->first();
 
                 $before = $this->snapshot($user, $at);
                 $user->forceFill([
@@ -330,7 +327,7 @@ final class MembershipService
                     'start_at' => null,
                     'end_at' => null,
                 ])->save();
-                $log->forceFill(['status' => VipStatus::EXPIRED])->save();
+                $log?->forceFill(['status' => VipStatus::EXPIRED])->save();
                 $this->cancelPendingChanges($user->id);
                 $this->writeLog(
                     $user,
@@ -340,7 +337,7 @@ final class MembershipService
                     $before,
                     $this->snapshot($user, $at),
                     $at,
-                    'membership-expired:'.$user->id.':'.$log->id,
+                    $idempotencyKey,
                 );
 
                 return 1;
@@ -369,7 +366,7 @@ final class MembershipService
                     return 0;
                 }
                 $change = MembershipChange::query()->lockForUpdate()->find($id);
-                if (! $change || $change->status !== 'pending' || $change->effective_at->gt($at)) {
+                if (! $change || $change->status !== 'pending' || $this->compareDates($change->effective_at, $at) > 0) {
                     return 0;
                 }
 
@@ -596,7 +593,7 @@ final class MembershipService
         if (! $user->vip_id || ! $user->start_at || ! $user->end_at) {
             return MembershipState::NONE;
         }
-        if ($this->immutableDate($user->end_at)->lte($at)) {
+        if ($this->compareDates($user->end_at, $at) <= 0) {
             return MembershipState::EXPIRED;
         }
         if (($this->currentPackage($user)?->level ?? 1) <= 0) {
@@ -611,8 +608,16 @@ final class MembershipService
         return $user->vip_id !== null
             && $user->start_at !== null
             && $user->end_at !== null
-            && $this->immutableDate($user->start_at)->lte($at)
-            && $this->immutableDate($user->end_at)->gt($at);
+            && $this->compareDates($user->start_at, $at) <= 0
+            && $this->compareDates($user->end_at, $at) > 0;
+    }
+
+    private function compareDates(mixed $left, mixed $right): int
+    {
+        return strcmp(
+            $this->immutableDate($left)->format('Y-m-d H:i:s'),
+            $this->immutableDate($right)->format('Y-m-d H:i:s'),
+        );
     }
 
     private function immutableDate(mixed $date): CarbonImmutable

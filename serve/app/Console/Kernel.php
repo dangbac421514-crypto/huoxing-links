@@ -13,7 +13,7 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule): void
     {
         // 会员到期
-        $schedule->command('app:vip-expired')->hourly();
+        $schedule->command('app:vip-expired')->hourly()->withoutOverlapping();
         // URL状态检测
         $schedule->command('app:chk-link')->daily();
     }
