@@ -11,7 +11,7 @@
         "ext-zip": "*",
         "guzzlehttp/guzzle": "^7.2",
         "gregwar/captcha": "^2.1.1",
-        "laravel/framework": "^11.0",
+        "laravel/framework": "^12.0",
         "laravel/sanctum": "^4.3",
         "laravel/tinker": "^3.0",
         "overtrue/easy-sms": "^3.2.1",
@@ -24,7 +24,7 @@
         "laravel/pint": "^1.0",
         "mockery/mockery": "^1.4.4",
         "nunomaduro/collision": "^8.1",
-        "phpunit/phpunit": "^10.5"
+        "phpunit/phpunit": "^11.0"
     },
     "autoload": {
         "psr-4": {
