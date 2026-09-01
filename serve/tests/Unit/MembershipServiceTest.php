@@ -191,6 +191,28 @@ final class MembershipServiceTest extends TestCase
         $this->assertSame('2026-10-15 10:00:00', $member->refresh()->end_at->format('Y-m-d H:i:s'));
     }
 
+    public function test_open_idempotency_key_cannot_replay_another_users_operation(): void
+    {
+        Date::setTestNow('2026-09-15 10:00:00');
+        $firstMember = $this->member();
+        $secondMember = $this->member();
+        $admin = $this->admin();
+        $key = $this->key(19);
+        $this->service()->open($firstMember, $this->package(2), $admin, '开通', $key);
+
+        $exception = null;
+        try {
+            $this->service()->open($secondMember, $this->package(2), $admin, '跨用户重放', $key);
+        } catch (BusinessRuleException $caught) {
+            $exception = $caught;
+        }
+
+        $this->assertInstanceOf(BusinessRuleException::class, $exception);
+        $this->assertSame('IDEMPOTENCY_CONFLICT', $exception->errorCode);
+        $this->assertNull($secondMember->refresh()->vip_id);
+        $this->assertSame(1, VipLogs::query()->where('idempotency_key', $key)->count());
+    }
+
     public function test_repeated_downgrade_idempotency_returns_the_original_pending_change(): void
     {
         Date::setTestNow('2026-09-20 10:00:00');
@@ -206,6 +228,37 @@ final class MembershipServiceTest extends TestCase
         $second = $this->service()->scheduleDowngrade($member->refresh(), $this->package(2), $admin, '重复降级', $key);
 
         $this->assertSame($first->id, $second->id);
+        $this->assertSame(1, MembershipChange::query()->where('idempotency_key', $key)->count());
+        $this->assertSame(1, VipLogs::query()->where('idempotency_key', $key)->count());
+    }
+
+    public function test_downgrade_idempotency_key_cannot_replay_another_users_operation(): void
+    {
+        Date::setTestNow('2026-09-20 10:00:00');
+        $firstMember = $this->member([
+            'vip_id' => 3,
+            'start_at' => '2026-09-15 10:00:00',
+            'end_at' => '2026-12-15 10:00:00',
+        ]);
+        $secondMember = $this->member([
+            'vip_id' => 3,
+            'start_at' => '2026-09-15 10:00:00',
+            'end_at' => '2026-12-15 10:00:00',
+        ]);
+        $admin = $this->admin();
+        $key = $this->key(20);
+        $this->service()->scheduleDowngrade($firstMember, $this->package(2), $admin, '降级', $key);
+
+        $exception = null;
+        try {
+            $this->service()->scheduleDowngrade($secondMember, $this->package(2), $admin, '跨用户重放', $key);
+        } catch (BusinessRuleException $caught) {
+            $exception = $caught;
+        }
+
+        $this->assertInstanceOf(BusinessRuleException::class, $exception);
+        $this->assertSame('IDEMPOTENCY_CONFLICT', $exception->errorCode);
+        $this->assertSame(0, MembershipChange::query()->where('user_id', $secondMember->id)->count());
         $this->assertSame(1, MembershipChange::query()->where('idempotency_key', $key)->count());
         $this->assertSame(1, VipLogs::query()->where('idempotency_key', $key)->count());
     }

@@ -73,10 +73,10 @@ final class MembershipService
     {
         $this->validateReasonAndKey($reason, $idempotencyKey);
 
-        return $this->runLogMutation($idempotencyKey, function () use ($user, $package, $actor, $reason, $idempotencyKey): VipLogs {
+        return $this->runLogMutation($idempotencyKey, $user->id, 'open', $package->id, function () use ($user, $package, $actor, $reason, $idempotencyKey): VipLogs {
             $locked = $this->lockUser($user);
             $actor = $this->enabledAdmin($actor);
-            $existing = $this->existingLog($idempotencyKey, $locked->id);
+            $existing = $this->existingLog($idempotencyKey, $locked->id, 'open', $package->id);
             if ($existing) {
                 return $existing;
             }
@@ -113,10 +113,10 @@ final class MembershipService
     {
         $this->validateReasonAndKey($reason, $idempotencyKey);
 
-        return $this->runLogMutation($idempotencyKey, function () use ($user, $package, $actor, $reason, $idempotencyKey): VipLogs {
+        return $this->runLogMutation($idempotencyKey, $user->id, 'renew', $package->id, function () use ($user, $package, $actor, $reason, $idempotencyKey): VipLogs {
             $locked = $this->lockUser($user);
             $actor = $this->enabledAdmin($actor);
-            $existing = $this->existingLog($idempotencyKey, $locked->id);
+            $existing = $this->existingLog($idempotencyKey, $locked->id, 'renew', $package->id);
             if ($existing) {
                 return $existing;
             }
@@ -156,10 +156,10 @@ final class MembershipService
     {
         $this->validateReasonAndKey($reason, $idempotencyKey);
 
-        return $this->runLogMutation($idempotencyKey, function () use ($user, $package, $actor, $reason, $idempotencyKey): VipLogs {
+        return $this->runLogMutation($idempotencyKey, $user->id, 'upgrade', $package->id, function () use ($user, $package, $actor, $reason, $idempotencyKey): VipLogs {
             $locked = $this->lockUser($user);
             $actor = $this->enabledAdmin($actor);
-            $existing = $this->existingLog($idempotencyKey, $locked->id);
+            $existing = $this->existingLog($idempotencyKey, $locked->id, 'upgrade', $package->id);
             if ($existing) {
                 return $existing;
             }
@@ -194,12 +194,12 @@ final class MembershipService
     {
         $this->validateReasonAndKey($reason, $idempotencyKey);
 
-        return $this->runChangeMutation($idempotencyKey, function () use ($user, $package, $actor, $reason, $idempotencyKey): MembershipChange {
+        return $this->runChangeMutation($idempotencyKey, $user->id, 'downgrade', $package->id, function () use ($user, $package, $actor, $reason, $idempotencyKey): MembershipChange {
             $locked = $this->lockUser($user);
             $actor = $this->enabledAdmin($actor);
             $existing = MembershipChange::query()->where('idempotency_key', $idempotencyKey)->first();
             if ($existing) {
-                return $existing;
+                return $this->matchingChange($existing, $locked->id, 'downgrade', $package->id);
             }
 
             $at = $this->now();
@@ -224,6 +224,18 @@ final class MembershipService
             );
 
             $before = $this->snapshot($locked, $at);
+            $change = MembershipChange::query()->create([
+                'user_id' => $locked->id,
+                'from_vip_id' => $current->id,
+                'to_vip_id' => $package->id,
+                'action' => 'downgrade',
+                'status' => 'pending',
+                'effective_at' => $effectiveAt,
+                'actor_user_id' => $actor->id,
+                'reason' => $reason,
+                'idempotency_key' => $idempotencyKey,
+            ]);
+
             $this->writeLog(
                 $locked,
                 $actor,
@@ -235,17 +247,7 @@ final class MembershipService
                 $idempotencyKey,
             );
 
-            return MembershipChange::query()->create([
-                'user_id' => $locked->id,
-                'from_vip_id' => $current->id,
-                'to_vip_id' => $package->id,
-                'action' => 'downgrade',
-                'status' => 'pending',
-                'effective_at' => $effectiveAt,
-                'actor_user_id' => $actor->id,
-                'reason' => $reason,
-                'idempotency_key' => $idempotencyKey,
-            ]);
+            return $change;
         });
     }
 
@@ -253,10 +255,10 @@ final class MembershipService
     {
         $this->validateReasonAndKey($reason, $idempotencyKey);
 
-        return $this->runLogMutation($idempotencyKey, function () use ($user, $actor, $reason, $idempotencyKey): VipLogs {
+        return $this->runLogMutation($idempotencyKey, $user->id, 'revoke', null, function () use ($user, $actor, $reason, $idempotencyKey): VipLogs {
             $locked = $this->lockUser($user);
             $actor = $this->enabledAdmin($actor);
-            $existing = $this->existingLog($idempotencyKey, $locked->id);
+            $existing = $this->existingLog($idempotencyKey, $locked->id, 'revoke');
             if ($existing) {
                 return $existing;
             }
@@ -423,28 +425,41 @@ final class MembershipService
         return $processed;
     }
 
-    private function runLogMutation(string $idempotencyKey, callable $callback): VipLogs
+    private function runLogMutation(string $idempotencyKey, int $userId, string $action, ?int $packageId, callable $callback): VipLogs
     {
         try {
             return DB::transaction($callback, 3);
         } catch (QueryException $exception) {
-            $existing = VipLogs::query()->where('idempotency_key', $idempotencyKey)->first();
-            if ($existing) {
-                return $existing;
+            if (! $this->isIdempotencyDuplicate($exception, ['vip_logs'])) {
+                throw $exception;
             }
 
-            throw $exception;
+            $existing = VipLogs::query()->where('idempotency_key', $idempotencyKey)->first();
+            if (! $existing) {
+                throw $exception;
+            }
+
+            return $this->matchingLog($existing, $userId, $action, $packageId);
         }
     }
 
-    private function runChangeMutation(string $idempotencyKey, callable $callback): MembershipChange
+    private function runChangeMutation(string $idempotencyKey, int $userId, string $action, ?int $packageId, callable $callback): MembershipChange
     {
         try {
             return DB::transaction($callback, 3);
         } catch (QueryException $exception) {
+            if (! $this->isIdempotencyDuplicate($exception, ['membership_changes', 'vip_logs'])) {
+                throw $exception;
+            }
+
             $existing = MembershipChange::query()->where('idempotency_key', $idempotencyKey)->first();
             if ($existing) {
-                return $existing;
+                return $this->matchingChange($existing, $userId, $action, $packageId);
+            }
+
+            $existingLog = VipLogs::query()->where('idempotency_key', $idempotencyKey)->first();
+            if ($existingLog) {
+                throw $this->idempotencyConflict();
             }
 
             throw $exception;
@@ -476,14 +491,56 @@ final class MembershipService
         return $user->vip_id ? VipPackage::query()->find($user->vip_id) : null;
     }
 
-    private function existingLog(string $idempotencyKey, int $userId): ?VipLogs
+    private function existingLog(string $idempotencyKey, int $userId, string $action, ?int $packageId = null): ?VipLogs
     {
         $existing = VipLogs::query()->where('idempotency_key', $idempotencyKey)->first();
-        if ($existing && (int) $existing->user_id !== $userId) {
-            throw $this->rule('idempotency_key_conflict', '幂等键已用于其他会员');
+        if ($existing) {
+            return $this->matchingLog($existing, $userId, $action, $packageId);
         }
 
         return $existing;
+    }
+
+    private function matchingLog(VipLogs $log, int $userId, string $action, ?int $packageId = null): VipLogs
+    {
+        if ((int) $log->user_id !== $userId || $log->action !== $action || ($packageId !== null && (int) $log->vip_id !== $packageId)) {
+            throw $this->idempotencyConflict();
+        }
+
+        return $log;
+    }
+
+    private function matchingChange(MembershipChange $change, int $userId, string $action, ?int $packageId = null): MembershipChange
+    {
+        if (
+            (int) $change->user_id !== $userId
+            || $change->action !== $action
+            || ($packageId !== null && (int) $change->to_vip_id !== $packageId)
+        ) {
+            throw $this->idempotencyConflict();
+        }
+
+        return $change;
+    }
+
+    /**
+     * @param  array<int, string>  $tables
+     */
+    private function isIdempotencyDuplicate(QueryException $exception, array $tables): bool
+    {
+        $errorInfo = $exception->errorInfo;
+        if ((string) ($errorInfo[0] ?? $exception->getCode()) !== '23000' || (int) ($errorInfo[1] ?? 0) !== 1062) {
+            return false;
+        }
+
+        $message = (string) ($errorInfo[2] ?? $exception->getMessage());
+        foreach ($tables as $table) {
+            if (str_contains($message, $table.'.'.$table.'_idempotency_key_unique')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function cancelPendingChanges(int $userId, ?int $exceptId = null): void
@@ -593,5 +650,10 @@ final class MembershipService
     private function rule(string $code, string $message): BusinessRuleException
     {
         return new BusinessRuleException($code, $message, 422);
+    }
+
+    private function idempotencyConflict(): BusinessRuleException
+    {
+        return $this->rule('IDEMPOTENCY_CONFLICT', '幂等键与会员或操作不匹配');
     }
 }
