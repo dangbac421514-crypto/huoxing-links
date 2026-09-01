@@ -7,6 +7,7 @@ use App\Enums\LinkType;
 use App\Models\Link;
 use App\Support\LinkTypeParser;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 
 /**
  * Redis-backed cache for the public target fields of non-landing links.
@@ -32,6 +33,10 @@ final class PublicTargetCache
         }
 
         $key = $this->key($link, $type->value);
+        if ($key === null) {
+            return null;
+        }
+
         $cached = Cache::store('redis')->get($key);
         if (! is_array($cached)) {
             if ($cached !== null) {
@@ -73,8 +78,13 @@ final class PublicTargetCache
             return;
         }
 
+        $key = $this->key($link, $type->value);
+        if ($key === null) {
+            return;
+        }
+
         Cache::store('redis')->put(
-            $this->key($link, $type->value),
+            $key,
             $publicTarget,
             self::TTL_SECONDS,
         );
@@ -87,33 +97,36 @@ final class PublicTargetCache
             return;
         }
 
-        Cache::store('redis')->forget($this->key($link, $type->value));
+        $key = $this->key($link, $type->value);
+        if ($key === null) {
+            return;
+        }
+
+        Cache::store('redis')->forget($key);
     }
 
     /**
      * Exposed narrowly for deterministic cache/privacy tests; callers should
      * use get/put for normal operations.
      */
-    public function key(Link $link, ?int $strictType = null): string
+    public function key(Link $link, ?int $strictType = null): ?string
     {
-        $type = $strictType ?? LinkTypeParser::parse($link->getRawOriginal('type'))?->value;
-        if ($type === null) {
-            return self::KEY_PREFIX.'unknown:'.$link->getKey().':'.$this->version($link);
+        $parsedType = LinkTypeParser::parse($strictType ?? $link->getRawOriginal('type'));
+        $version = $this->version($link);
+        if ($parsedType === null || $parsedType === LinkType::LANDING_MINI || $version === null) {
+            return null;
         }
 
-        return self::KEY_PREFIX.$link->getKey().':'.$type.':'.$this->version($link);
+        return self::KEY_PREFIX.$link->getKey().':'.$parsedType->value.':'.$version;
     }
 
-    private function version(Link $link): string
+    private function version(Link $link): ?string
     {
         $rawVersion = $link->getRawOriginal('target_version');
-        if (is_int($rawVersion) && $rawVersion > 0) {
-            return (string) $rawVersion;
-        }
-        if (is_string($rawVersion) && preg_match('/\A[1-9][0-9]*\z/D', $rawVersion) === 1) {
-            return $rawVersion;
+        if (! is_string($rawVersion) || ! Str::isUuid($rawVersion)) {
+            return null;
         }
 
-        return '1';
+        return strtolower($rawVersion);
     }
 }

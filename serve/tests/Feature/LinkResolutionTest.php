@@ -92,15 +92,20 @@ final class LinkResolutionTest extends TestCase
     {
         $this->assertTrue(Schema::hasColumn('links', 'target_version'));
         $link = $this->miniProgramLink();
-        $this->assertSame(1, (int) $link->fresh()->target_version);
+        $initialVersion = (string) $link->fresh()->target_version;
+        $this->assertTrue(Str::isUuid($initialVersion));
 
         Carbon::setTestNow(CarbonImmutable::parse('2026-09-02 12:00:00', 'Asia/Shanghai'));
         try {
             $link->update(['title' => 'first update', 'target_version' => 99]);
-            $this->assertSame(2, (int) $link->fresh()->target_version);
+            $firstVersion = (string) $link->fresh()->target_version;
+            $this->assertTrue(Str::isUuid($firstVersion));
+            $this->assertNotSame($initialVersion, $firstVersion);
 
             $link->update(['title' => 'second update', 'target_version' => 1]);
-            $this->assertSame(3, (int) $link->fresh()->target_version);
+            $secondVersion = (string) $link->fresh()->target_version;
+            $this->assertTrue(Str::isUuid($secondVersion));
+            $this->assertNotSame($firstVersion, $secondVersion);
         } finally {
             Carbon::setTestNow();
         }
@@ -117,7 +122,7 @@ final class LinkResolutionTest extends TestCase
 
         $migration->up();
         $this->assertTrue(Schema::hasColumn('links', 'target_version'));
-        $this->assertSame(1, (int) $link->fresh()->target_version);
+        $this->assertTrue(Str::isUuid((string) $link->fresh()->target_version));
     }
 
     public function test_target_cache_hit_skips_second_resolver_but_logs_each_visitor_and_consumes_unique_uv(): void
@@ -208,7 +213,9 @@ final class LinkResolutionTest extends TestCase
 
         $this->assertSame(4, $generator->calls);
         $this->assertGreaterThanOrEqual(4, count(Redis::connection('cache')->keys('*link-target*')));
-        $this->assertSame('link-target:v1:'.$link->id.':1:4', app(PublicTargetCache::class)->key($link));
+        $revision = (string) $link->target_version;
+        $this->assertTrue(Str::isUuid($revision));
+        $this->assertSame('link-target:v1:'.$link->id.':1:'.$revision, app(PublicTargetCache::class)->key($link));
     }
 
     public function test_invalid_cached_mini_targets_are_deleted_and_re_resolved_without_second_uv(): void
@@ -455,6 +462,7 @@ final class LinkResolutionTest extends TestCase
             '',
             'http://evil.example/qr.png',
             'https://evil.example/qr.png',
+            'https://user:pass@evil.example/qr.png',
             '//evil.example/qr.png',
             '/absolute/qr.png',
             './dot/qr.png',

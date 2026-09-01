@@ -425,7 +425,6 @@ final class LinkResolutionCoordinator
             || str_contains($path, '\\')
             || str_contains($path, '?')
             || str_contains($path, '#')
-            || str_contains($path, '@')
             || preg_match('/^[a-z][a-z0-9+.-]*:/i', $path) === 1
         ) {
             return false;
@@ -438,7 +437,6 @@ final class LinkResolutionCoordinator
             || str_contains($decoded, '\\')
             || str_contains($decoded, '?')
             || str_contains($decoded, '#')
-            || str_contains($decoded, '@')
             || preg_match('/^[a-z][a-z0-9+.-]*:/i', $decoded) === 1
         ) {
             return false;

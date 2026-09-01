@@ -160,4 +160,24 @@ final class LinkSecretTest extends TestCase
         $this->assertGreaterThanOrEqual(299, $ttl);
         $this->assertLessThanOrEqual(300, $ttl);
     }
+
+    public function test_public_target_cache_fails_closed_for_missing_or_invalid_uuid_revision(): void
+    {
+        $link = $this->miniProgramLink();
+        $attributes = $link->getAttributes();
+        $attributes['target_version'] = null;
+        $link->setRawAttributes($attributes);
+        $link->syncOriginal();
+
+        $cache = app(PublicTargetCache::class);
+        $this->assertNull($cache->key($link));
+        $cache->put($link, [
+            'title' => 'safe',
+            'description' => '',
+            'icon' => null,
+            'target' => 'weixin://dl/business/?t=must-not-cache',
+        ]);
+        $this->assertNull($cache->get($link));
+        $this->assertSame([], Redis::connection('cache')->keys('*unknown*'));
+    }
 }
