@@ -3,12 +3,17 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\UserType;
+use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use App\Models\VipPackage;
+use App\Services\MembershipService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use InvalidArgumentException;
 use Ugly\Base\Traits\ApiResource;
 
 class UserController extends Controller
@@ -33,19 +38,35 @@ class UserController extends Controller
         $request->validate([
             'username' => 'required|regex:/^1[3-9]\d{9}$/|unique:users,username',
             'password' => 'required|min:6',
+            'vip_id' => 'nullable|integer|exists:vip_packages,id',
+            'reason' => 'required_with:vip_id|string|max:1000',
+            'idempotency_key' => 'required_with:vip_id|uuid',
         ]);
-        $params = $request->only(['username', 'password', 'vip_id']);
 
-        if (! empty($params['vip_id'])) {
-            $params['start_at'] = now();
-            $params['end_at'] = now()->addMonth();
+        try {
+            DB::transaction(function () use ($request): void {
+                $user = User::query()->create([
+                    'username' => $request->string('username')->toString(),
+                    'password' => Hash::make($request->string('password')->toString()),
+                    'status' => true,
+                    'type' => UserType::MEMBER,
+                ]);
+
+                if ($request->filled('vip_id')) {
+                    app(MembershipService::class)->open(
+                        $user,
+                        VipPackage::query()->findOrFail($request->integer('vip_id')),
+                        auth('api')->user(),
+                        $request->string('reason')->toString(),
+                        $request->string('idempotency_key')->toString(),
+                    );
+                }
+            });
+        } catch (BusinessRuleException|InvalidArgumentException $exception) {
+            return $exception instanceof BusinessRuleException
+                ? $this->businessRuleFailure($exception)
+                : $this->failed($exception->getMessage(), 422);
         }
-
-        $params['status'] = true;
-        $params['type'] = UserType::MEMBER;
-        $params['password'] = bcrypt($params['password']);
-
-        User::query()->create($params);
 
         return $this->success();
     }
@@ -55,28 +76,66 @@ class UserController extends Controller
     {
         $user = User::query()->whereIn('type', [UserType::MEMBER, UserType::AGENT])->findOrFail($id);
 
-        $params = $request->only(['status', 'vip_id', 'end_at', 'credit']);
+        $request->validate([
+            'status' => 'sometimes|boolean',
+            'credit' => 'sometimes|numeric',
+            'vip_id' => 'nullable|integer|exists:vip_packages,id',
+            'action' => 'sometimes|nullable|in:open,renew,upgrade,downgrade,revoke',
+            'reason' => 'required_with:action|string|max:1000',
+            'idempotency_key' => 'required_with:action|uuid',
+        ]);
 
-        $pack_id = $params['vip_id'] ?? null;
-        $model = VipPackage::class;
-
-        $pak = $user->getPackageConfig();
-        if ($pak?->id == $pack_id) {
-            return $this->failed('没有修改');
+        $action = $request->string('action')->toString();
+        if ($request->has('vip_id') && $action === '') {
+            return $this->failed('会员变更必须指定 action、reason 和 idempotency_key', 422);
         }
-        if ($pack_id) {
-            if (app($model)->where('id', $pack_id)->doesntExist()) {
-                return $this->failed('套餐不存在');
-            }
-            $params['end_at'] = now()->addMonth();
-            if (empty($user->start_at)) {
-                $user->start_at = now();
-            }
+        if ($action !== '' && $action !== 'revoke' && ! $request->filled('vip_id')) {
+            return $this->failed('该会员变更必须指定套餐', 422);
         }
 
-        $user->update($params);
+        try {
+            DB::transaction(function () use ($request, $user, $action): void {
+                $params = $request->only(['status', 'credit']);
+                if ($params !== []) {
+                    User::query()->whereKey($user->id)->update($params);
+                }
+                if ($action === '') {
+                    return;
+                }
+
+                $service = app(MembershipService::class);
+                $actor = auth('api')->user();
+                $reason = $request->string('reason')->toString();
+                $key = $request->string('idempotency_key')->toString();
+                if ($action === 'revoke') {
+                    $service->revoke($user, $actor, $reason, $key);
+
+                    return;
+                }
+
+                $package = VipPackage::query()->findOrFail($request->integer('vip_id'));
+                match ($action) {
+                    'open' => $service->open($user, $package, $actor, $reason, $key),
+                    'renew' => $service->renew($user, $package, $actor, $reason, $key),
+                    'upgrade' => $service->upgrade($user, $package, $actor, $reason, $key),
+                    'downgrade' => $service->scheduleDowngrade($user, $package, $actor, $reason, $key),
+                };
+            });
+        } catch (BusinessRuleException|InvalidArgumentException $exception) {
+            return $exception instanceof BusinessRuleException
+                ? $this->businessRuleFailure($exception)
+                : $this->failed($exception->getMessage(), 422);
+        }
 
         return $this->success();
+    }
+
+    private function businessRuleFailure(BusinessRuleException $exception): JsonResponse
+    {
+        return response()->json([
+            'code' => $exception->errorCode,
+            'message' => $exception->getMessage(),
+        ], $exception->status);
     }
 
     public function agent_tree()
