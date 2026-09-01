@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Route;
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
 final class FoundationAcceptanceTest extends TestCase
@@ -23,5 +24,22 @@ final class FoundationAcceptanceTest extends TestCase
         $this->assertFalse(collect(Route::getRoutes())->contains(
             static fn ($route): bool => $route->uri() === 'install',
         ));
+    }
+
+    public function test_git_index_has_no_legacy_sql_dumps_or_default_credentials(): void
+    {
+        $repository = dirname(base_path());
+        $tracked = Process::fromShellCommandline('git -C '.escapeshellarg($repository).' ls-files -z')
+            ->mustRun()
+            ->getOutput();
+
+        $this->assertStringNotContainsString("serve/database/base.sql\0", $tracked);
+        $this->assertStringNotContainsString("serve/database/packages.sql\0", $tracked);
+
+        $scanProcess = Process::fromShellCommandline(
+            'git -C '.escapeshellarg($repository).' grep --cached -n -I -E '.escapeshellarg('admin123|\\$2y\\$12\\$DQNA/1BJcPdmpJ9ylifXHO9X.RDaovOj4SHL5M6S/vr9lvnFND5Gy').' -- deploy.sh serve/app serve/config serve/database/seeders admin/src admin/public jump mini_programs README.md',
+        );
+        $exitCode = $scanProcess->run();
+        $this->assertSame(1, $exitCode, $scanProcess->getOutput());
     }
 }

@@ -291,7 +291,7 @@ final class MembershipService
             ->whereNotNull('vip_id')
             ->whereNotNull('start_at')
             ->whereNotNull('end_at')
-            ->where('end_at', '<=', $at)
+            ->where('end_at', '<=', $this->databaseDate($at))
             ->pluck('id');
         $processed = 0;
 
@@ -315,8 +315,8 @@ final class MembershipService
                     ->where('user_id', $user->id)
                     ->where('status', VipStatus::ACTIVE)
                     ->where('vip_id', $user->vip_id)
-                    ->where('start_at', $user->start_at)
-                    ->where('end_at', $user->end_at)
+                    ->where('start_at', $this->databaseDate($this->immutableDate($user->start_at)))
+                    ->where('end_at', $this->databaseDate($this->immutableDate($user->end_at)))
                     ->lockForUpdate()
                     ->orderByDesc('id')
                     ->first();
@@ -351,7 +351,7 @@ final class MembershipService
     {
         $ids = MembershipChange::query()
             ->where('status', 'pending')
-            ->where('effective_at', '<=', $at)
+            ->where('effective_at', '<=', $this->databaseDate($at))
             ->pluck('id');
         $processed = 0;
 
@@ -631,7 +631,12 @@ final class MembershipService
 
     private function storageDate(CarbonImmutable $date, CarbonImmutable $reference): CarbonImmutable
     {
-        return $date->setTimezone($reference->getTimezone());
+        return $date->setTimezone('Asia/Shanghai');
+    }
+
+    private function databaseDate(CarbonImmutable $date): CarbonImmutable
+    {
+        return $date->setTimezone('Asia/Shanghai');
     }
 
     private function configuredBoolean(string $key): bool

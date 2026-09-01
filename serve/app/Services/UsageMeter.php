@@ -83,6 +83,6 @@ final class UsageMeter
 
     private function storageDate(CarbonImmutable $date): CarbonImmutable
     {
-        return $date->setTimezone((string) config('app.timezone', 'UTC'));
+        return $date->setTimezone('Asia/Shanghai');
     }
 }

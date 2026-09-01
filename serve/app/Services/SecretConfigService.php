@@ -20,6 +20,8 @@ final class SecretConfigService
         'wechat_pay_certificate',
     ];
 
+    public function __construct(private readonly ProtectedSecretAuditService $audits) {}
+
     public function get(string $slug, mixed $default = null): mixed
     {
         $this->assertSlug($slug);
@@ -48,10 +50,20 @@ final class SecretConfigService
             return;
         }
 
-        SysConfig::query()->updateOrCreate(
-            ['slug' => $slug],
-            ['value' => 'enc:v1:'.Crypt::encryptString($value)]
-        );
+        $actorUserId = $this->audits->currentActorId();
+        DB::transaction(function () use ($slug, $value, $actorUserId): void {
+            SysConfig::query()->updateOrCreate(
+                ['slug' => $slug],
+                ['value' => 'enc:v1:'.Crypt::encryptString($value)]
+            );
+            $this->audits->record(
+                'protected_secret.set',
+                $slug,
+                $actorUserId,
+                'secret_config',
+                ['operation' => 'set'],
+            );
+        });
 
         $this->forgetSystemConfigCache();
     }

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\ProtectedSecretAuditService;
 use App\Services\SanitizedLinkVisitRecorder;
 use App\Services\SecretConfigService;
 use Illuminate\Console\Command;
@@ -17,7 +18,7 @@ final class EncryptLegacySecrets extends Command
 
     protected $description = '将历史明文受保护配置加密并生成受保护备份';
 
-    public function handle(SecretConfigService $secrets): int
+    public function handle(SecretConfigService $secrets, ProtectedSecretAuditService $audits): int
     {
         $legacy = [];
 
@@ -41,7 +42,7 @@ final class EncryptLegacySecrets extends Command
             $this->writeBackup($legacy);
         }
 
-        DB::transaction(function () use ($secrets): void {
+        DB::transaction(function () use ($secrets, $audits): void {
             foreach ($secrets->secretSlugs() as $slug) {
                 $raw = DB::table('sys_configs')->where('slug', $slug)->value('value');
 
@@ -49,6 +50,7 @@ final class EncryptLegacySecrets extends Command
                     DB::table('sys_configs')->where('slug', $slug)->update([
                         'value' => 'enc:v1:'.Crypt::encryptString($raw),
                     ]);
+                    $audits->record('protected_secret.migrated', $slug, null, 'legacy_migration', ['operation' => 'encrypt_legacy']);
                 }
             }
 
@@ -60,6 +62,13 @@ final class EncryptLegacySecrets extends Command
                 DB::table('mini_programs')->where('id', $row->id)->update([
                     'secret' => Crypt::encryptString($row->secret),
                 ]);
+                $audits->record(
+                    'protected_secret.migrated',
+                    'mini_program:'.$row->id.':secret',
+                    null,
+                    'legacy_migration',
+                    ['operation' => 'encrypt_legacy', 'resource_type' => 'mini_program', 'resource_id' => (int) $row->id],
+                );
             }
 
             $this->scrubLegacyVisitLogs();

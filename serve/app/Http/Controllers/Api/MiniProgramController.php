@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Enums\MiniType;
 use App\Enums\UserType;
 use App\Models\MiniProgram;
+use App\Services\EntitlementService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rules\Enum;
@@ -13,14 +14,10 @@ use Ugly\Base\Services\FormService;
 
 class MiniProgramController extends FormController
 {
-    public function home(): JsonResponse
+    public function home(EntitlementService $entitlements): JsonResponse
     {
         $user = auth('api')->user();
-        $is_pre_min = false;
-        if ($user->start_at < now() && $user->end_at > now()) {
-            // 套餐包含官方小程序池使用
-            $is_pre_min = $user->getPackageConfig('pre_min');
-        }
+        $isPreMin = $entitlements->assertActive($user)->allowsOfficialMiniProgramPool();
         $query = MiniProgram::search([
             'name' => 'like',
             'type' => '=',
@@ -28,7 +25,7 @@ class MiniProgramController extends FormController
         ], ['user:id,username'])
             ->where(fn ($query) => $query->where('user_id', $user->id)
                 ->when(
-                    $is_pre_min,
+                    $isPreMin,
                     fn ($query) => $query->orWhere('is_pre_min', true)
                 )
             )
@@ -75,8 +72,8 @@ class MiniProgramController extends FormController
                 return true;
             }
             if ($form->isCreate()) {
-                $min_count_limit = (int) $user->getPackageConfig('min_count_limit');
-                if ($min_count_limit <= MiniProgram::query()->where('user_id', $user->id)->count()) {
+                $snapshot = app(EntitlementService::class)->assertActive($user);
+                if ($snapshot->miniProgramLimit <= MiniProgram::query()->where('user_id', $user->id)->count()) {
                     return '创建小程序数量已达上限！';
                 }
 

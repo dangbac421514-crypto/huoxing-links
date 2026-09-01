@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\InstantCast;
 use App\Contracts\ReferralCodeGenerator;
 use App\Enums\UserType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -27,8 +28,8 @@ class User extends Authenticatable
         'accumulate_credit' => Amount::class.':4',
         'commission' => Amount::class,
         'accumulate_commission' => Amount::class,
-        'start_at' => 'datetime',
-        'end_at' => 'datetime',
+        'start_at' => InstantCast::class,
+        'end_at' => InstantCast::class,
         'must_change_password' => 'boolean',
     ];
 

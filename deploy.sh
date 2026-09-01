@@ -68,8 +68,9 @@ if [ ! -e "install.lock" ]; then
    php artisan key:generate --force
    echo "初始数据库"
    php artisan migrate --force
-   echo "初始管理员账号"
-   php artisan app:system-init
+   php artisan db:seed --force
+   echo "请使用受控命令创建管理员"
+   php artisan app:admin-provision
    if [ ! -d "public/storage" ]; then
       php artisan storage:link
    fi
@@ -80,4 +81,4 @@ cd ../
 nginx_user=$(ps aux | grep nginx | grep -v grep | sed -n '2p' | grep -oE '^[^ ]+')
 chown -R "$nginx_user" admin
 chown -R "$nginx_user" serve
-echo "完成！默认账号admin 密码admin123"
+echo "完成！管理员由 app:admin-provision 受控创建"

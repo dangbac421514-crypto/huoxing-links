@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Casts\InstantCast;
 use App\Models\MembershipChange;
+use App\Models\ProtectedSecretAudit;
 use App\Models\UsagePeriod;
 use App\Models\UsageVisitor;
 use App\Models\User;
@@ -22,11 +24,15 @@ final class DatabaseSchemaTest extends TestCase
         $this->assertTrue(Schema::hasTable('membership_changes'));
         $this->assertTrue(Schema::hasTable('usage_periods'));
         $this->assertTrue(Schema::hasTable('usage_visitors'));
+        $this->assertTrue(Schema::hasTable('protected_secret_audits'));
         $this->assertTrue(Schema::hasColumns('vip_logs', [
             'actor_user_id', 'action', 'reason', 'before_snapshot',
             'after_snapshot', 'effective_at', 'idempotency_key',
         ]));
         $this->assertTrue(Schema::hasColumn('users', 'must_change_password'));
+        $this->assertTrue(Schema::hasColumns('protected_secret_audits', [
+            'actor_user_id', 'event_name', 'key_identifier', 'source', 'context', 'created_at',
+        ]));
 
         $this->assertHasUniqueIndex('vip_logs', ['idempotency_key']);
         $this->assertHasUniqueIndex('membership_changes', ['idempotency_key']);
@@ -126,6 +132,7 @@ final class DatabaseSchemaTest extends TestCase
         $usagePeriod = new UsagePeriod;
         $usageVisitor = new UsageVisitor;
         $vipLog = new VipLogs;
+        $secretAudit = new ProtectedSecretAudit;
 
         $this->assertInstanceOf(BelongsTo::class, $membershipChange->actor());
         $this->assertInstanceOf(BelongsTo::class, $membershipChange->user());
@@ -136,12 +143,14 @@ final class DatabaseSchemaTest extends TestCase
         $this->assertInstanceOf(BelongsTo::class, $vipLog->actor());
         $this->assertInstanceOf(BelongsTo::class, $vipLog->user());
         $this->assertInstanceOf(BelongsTo::class, $vipLog->vipPackage());
+        $this->assertInstanceOf(BelongsTo::class, $secretAudit->actor());
+        $this->assertSame('array', $secretAudit->getCasts()['context']);
 
-        $this->assertSame('datetime', $membershipChange->getCasts()['effective_at']);
-        $this->assertSame('datetime', $usagePeriod->getCasts()['period_start']);
-        $this->assertSame('datetime', $usagePeriod->getCasts()['period_end']);
-        $this->assertSame('datetime', $usageVisitor->getCasts()['first_seen_at']);
-        $this->assertSame('datetime', $vipLog->getCasts()['effective_at']);
+        $this->assertSame(InstantCast::class, $membershipChange->getCasts()['effective_at']);
+        $this->assertSame(InstantCast::class, $usagePeriod->getCasts()['period_start']);
+        $this->assertSame(InstantCast::class, $usagePeriod->getCasts()['period_end']);
+        $this->assertSame(InstantCast::class, $usageVisitor->getCasts()['first_seen_at']);
+        $this->assertSame(InstantCast::class, $vipLog->getCasts()['effective_at']);
         $this->assertSame('array', $vipLog->getCasts()['before_snapshot']);
         $this->assertSame('array', $vipLog->getCasts()['after_snapshot']);
         $this->assertSame('boolean', (new User)->getCasts()['must_change_password']);

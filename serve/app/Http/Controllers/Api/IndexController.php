@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\MembershipState;
 use App\Enums\UserType;
 use App\Http\Controllers\Controller;
 use App\Jobs\PayVip;
@@ -31,8 +32,10 @@ class IndexController extends Controller
     public function index(Request $request, EntitlementService $entitlements)
     {
         $user = auth('api')->user();
+        $snapshot = $entitlements->resolve($user);
+
         // 超级管理的首页统计
-        if ($user->type === UserType::Admin) {
+        if ($snapshot->state === MembershipState::ADMIN) {
             $res['user_count'] = (string) User::query()->where('type', UserType::MEMBER)->count();
             $res['pay_count'] = User::query()->where('type', UserType::MEMBER)->whereNotNull('vip_id')->count();
             $res['pay_vip'] = bcdiv(Payment::query()
@@ -65,11 +68,10 @@ class IndexController extends Controller
         if ($user->type === UserType::MEMBER) {
             $res = [];
             $res['link_count'] = Link::query()->where('user_id', $user->id)->count();
-            $snapshot = $entitlements->resolve($user);
             $res['used_uv'] = $snapshot->period
                 ? (int) (UsagePeriod::query()
                     ->where('user_id', $user->id)
-                    ->where('period_start', $snapshot->period->start()->setTimezone((string) config('app.timezone', 'UTC')))
+                    ->where('period_start', $snapshot->period->start()->setTimezone('Asia/Shanghai'))
                     ->value('used_uv') ?? 0)
                 : 0;
             $res['vip_logs'] = VipLogs::with(['payment', 'vipPackage'])
@@ -103,7 +105,7 @@ class IndexController extends Controller
     }
 
     // 系统配置
-    public function config(): JsonResponse
+    public function config(EntitlementService $entitlements): JsonResponse
     {
         $configs = [
             'code_mode' => SystemConfig::get('send_code_mode'),
@@ -118,13 +120,14 @@ class IndexController extends Controller
 
         $user = auth('api')->user();
         if ($user) {
+            $snapshot = $entitlements->resolve($user);
             // 安全域名
             // $configs['domains'] = Domain::query()->where('enable', true)->get(['id', 'title']);
             // 小程序 (区分是否有权限使用平台小程序池)
             $configs['mini_programs'] = MiniProgram::query()
                 ->where(
                     fn ($query) => $query->where('user_id', $user->id)
-                        ->when($user->getPackageConfig('pre_min'), fn ($query) => $query->orWhere('is_pre_min', true))
+                        ->when($snapshot->allowsOfficialMiniProgramPool(), fn ($query) => $query->orWhere('is_pre_min', true))
                 )
                 ->get(['id', 'name']);
         }

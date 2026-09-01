@@ -28,9 +28,12 @@ final class SecretStorageStatus extends Command
 
             if (str_starts_with($raw, 'enc:v1:')) {
                 $encrypted++;
-                $compatible = $secrets->canDecryptStoredValue($raw) && $compatible;
+                if (! $secrets->canDecryptStoredValue($raw)) {
+                    $compatible = false;
+                }
             } else {
                 $plaintext++;
+                $compatible = false;
             }
         }
 
@@ -39,11 +42,18 @@ final class SecretStorageStatus extends Command
                 continue;
             }
 
+            if (! $this->looksLikeEncryptedValue($row->secret)) {
+                $plaintext++;
+                $compatible = false;
+
+                continue;
+            }
+
+            $encrypted++;
             try {
                 Crypt::decryptString($row->secret);
-                $encrypted++;
             } catch (\Throwable) {
-                $plaintext++;
+                $compatible = false;
             }
         }
 
@@ -56,5 +66,24 @@ final class SecretStorageStatus extends Command
         $this->line(json_encode($status, JSON_THROW_ON_ERROR));
 
         return $compatible ? self::SUCCESS : self::FAILURE;
+    }
+
+    private function looksLikeEncryptedValue(string $value): bool
+    {
+        $decoded = base64_decode($value, true);
+        if ($decoded === false) {
+            return false;
+        }
+
+        try {
+            $payload = json_decode($decoded, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return false;
+        }
+
+        return is_array($payload)
+            && is_string($payload['iv'] ?? null)
+            && is_string($payload['value'] ?? null)
+            && is_string($payload['mac'] ?? null);
     }
 }

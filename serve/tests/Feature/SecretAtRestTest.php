@@ -220,11 +220,11 @@ final class SecretAtRestTest extends TestCase
             ['value' => 'enc:v1:'.Crypt::encryptString('already-encrypted'), 'desc' => 'secret']
         );
 
-        $this->assertSame(0, Artisan::call('app:secret-storage-status', ['--json' => true]));
+        $this->assertSame(1, Artisan::call('app:secret-storage-status', ['--json' => true]));
         $output = Artisan::output();
         $this->assertStringNotContainsString($secret, $output);
         $this->assertStringNotContainsString('already-encrypted', $output);
-        $this->assertSame(['plaintext_count' => 1, 'encrypted_count' => 1, 'compatible' => true], json_decode(trim($output), true, 512, JSON_THROW_ON_ERROR));
+        $this->assertSame(['plaintext_count' => 1, 'encrypted_count' => 1, 'compatible' => false], json_decode(trim($output), true, 512, JSON_THROW_ON_ERROR));
 
         $this->artisan('app:encrypt-legacy-secrets')->assertExitCode(0);
         $files = File::glob(storage_path('app/private/secret-backups/*.json.enc'));

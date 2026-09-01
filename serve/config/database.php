@@ -55,6 +55,8 @@ return [
             'unix_socket' => env('DB_SOCKET', ''),
             'charset' => 'utf8mb4',
             'collation' => 'utf8mb4_unicode_ci',
+            // MySQL TIMESTAMP I/O uses the same product timezone as the app.
+            'timezone' => env('DB_TIMEZONE', '+08:00'),
             'prefix' => '',
             'prefix_indexes' => true,
             'strict' => true,

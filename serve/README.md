@@ -50,9 +50,9 @@ for a mandatory first password change.
 
 Never run `php artisan migrate:fresh` in production. Never use
 `php artisan test` as a production health check; use the isolated
-`serve/bin/test-env` wrapper for tests. Do not use the removed browser
-installer, import `base.sql`/`packages.sql` at runtime, or create a default
-administrator from a seeder.
+`serve/bin/test-env` wrapper for tests. The obsolete SQL dumps are not part of
+the release; do not restore them or create a default administrator from a
+seeder.
 
 ## Acceptance evidence
 
@@ -73,5 +73,5 @@ lock requirement.
 ## Runtime initialization
 
 Fresh installations use Laravel migrations and the idempotent database
-seeders. The legacy `/install` browser flow and its SQL-dump import path are
+seeders. The legacy `/install` browser flow and SQL-dump import path are
 removed. Provision the first administrator only with `app:admin-provision`.

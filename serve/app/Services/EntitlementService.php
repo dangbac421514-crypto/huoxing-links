@@ -11,7 +11,6 @@ use App\Models\VipPackage;
 use App\ValueObjects\EntitlementSnapshot;
 use App\ValueObjects\RollingPeriod;
 use Carbon\CarbonImmutable;
-use DateTimeInterface;
 
 final class EntitlementService
 {
@@ -54,9 +53,6 @@ final class EntitlementService
             throw $this->noEntitlement();
         }
 
-        // Membership timestamps are legacy MySQL wall-clock values. Read the
-        // raw value in the product timezone so old rows and new lifecycle
-        // writes use the same anchored calendar semantics.
         $start = $this->membershipDate($user, 'start_at');
         $end = $this->membershipDate($user, 'end_at');
 
@@ -168,31 +164,12 @@ final class EntitlementService
         return true;
     }
 
-    private function immutableDate(mixed $date): CarbonImmutable
-    {
-        if ($date instanceof CarbonImmutable) {
-            return $date;
-        }
-        if ($date instanceof DateTimeInterface) {
-            return CarbonImmutable::instance($date);
-        }
-
-        return CarbonImmutable::parse((string) $date);
-    }
-
     private function membershipDate(User $user, string $attribute): CarbonImmutable
     {
-        $raw = $user->getRawOriginal($attribute);
         $value = $user->getAttribute($attribute);
-        if ($user->isDirty($attribute)) {
-            return $value instanceof DateTimeInterface
-                ? CarbonImmutable::instance($value)->setTimezone(self::TIMEZONE)
-                : CarbonImmutable::parse((string) $value, self::TIMEZONE);
-        }
-        if (is_string($raw) && $raw !== '') {
-            return CarbonImmutable::parse($raw, self::TIMEZONE);
-        }
 
-        return $this->immutableDate($value)->setTimezone(self::TIMEZONE);
+        return $value instanceof CarbonImmutable
+            ? $value->setTimezone(self::TIMEZONE)
+            : CarbonImmutable::parse((string) $value, self::TIMEZONE);
     }
 }

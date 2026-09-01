@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\InstantCast;
 use App\Enums\VipStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -13,9 +14,9 @@ class VipLogs extends Model
 
     protected $casts = [
         'status' => VipStatus::class,
-        'start_at' => 'datetime',
-        'end_at' => 'datetime',
-        'effective_at' => 'datetime',
+        'start_at' => InstantCast::class,
+        'end_at' => InstantCast::class,
+        'effective_at' => InstantCast::class,
         'before_snapshot' => 'array',
         'after_snapshot' => 'array',
     ];

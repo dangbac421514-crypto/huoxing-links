@@ -14,6 +14,7 @@ final class TestEnvironmentGuard
 
         $allowed = [
             'APP_ENV' => 'testing',
+            'APP_TIMEZONE' => 'Asia/Shanghai',
             'DB_CONNECTION' => 'mysql',
             'CACHE_STORE' => 'array',
             'CACHE_DRIVER' => 'array',
@@ -40,6 +41,9 @@ final class TestEnvironmentGuard
         }
         if (! str_ends_with((string) env('DB_DATABASE'), '_test')) {
             throw new AssertionFailedError('Unsafe test environment: DB_DATABASE');
+        }
+        if ((string) env('DB_TIMEZONE') !== '+08:00') {
+            throw new AssertionFailedError('Unsafe test environment: DB_TIMEZONE');
         }
         if (! in_array((string) env('REDIS_HOST'), ['127.0.0.1', 'localhost', 'redis'], true)) {
             throw new AssertionFailedError('Unsafe test environment: REDIS_HOST');
