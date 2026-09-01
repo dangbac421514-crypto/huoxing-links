@@ -7,6 +7,7 @@ use App\Models\UsagePeriod;
 use App\Models\UsageVisitor;
 use App\Models\User;
 use App\Models\VipLogs;
+use App\Models\VipPackage;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\QueryException;
@@ -72,6 +73,30 @@ final class DatabaseSchemaTest extends TestCase
             'visitor_hash' => hash('sha256', 'visitor'),
             'first_seen_at' => now(),
         ]);
+    }
+
+    public function test_database_rejects_duplicate_membership_change_idempotency_key(): void
+    {
+        $user = User::factory()->create();
+        $package = VipPackage::query()->create([
+            'name' => 'test-package',
+            'price' => 0,
+            'level' => 1,
+            'config' => [],
+        ]);
+        $attributes = [
+            'user_id' => $user->id,
+            'to_vip_id' => $package->id,
+            'action' => 'upgrade',
+            'status' => 'pending',
+            'effective_at' => now(),
+            'idempotency_key' => '00000000-0000-4000-8000-000000000001',
+        ];
+
+        MembershipChange::query()->create($attributes);
+
+        $this->expectException(QueryException::class);
+        MembershipChange::query()->create($attributes);
     }
 
     public function test_database_rejects_duplicate_vip_log_idempotency_key(): void
