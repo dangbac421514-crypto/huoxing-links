@@ -66,6 +66,10 @@ Passing the code/database lane is not a DNS, Nginx, HTTPS, external-provider,
 or device acceptance result. Missing operator credentials or infrastructure
 access must remain an explicit external blocker.
 
+Dependency acceptance uses manifest constraints together with the resolved
+lock: Guzzle is `constraint ^7.15.2; resolved 7.15.5`, not an exact 7.15.2
+lock requirement.
+
 ## Runtime initialization
 
 Fresh installations use Laravel migrations and the idempotent database

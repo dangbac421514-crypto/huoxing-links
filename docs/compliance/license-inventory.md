@@ -29,6 +29,11 @@ are:
 | w7corp/easywechat | ^6.15 | v6.20.0 | MIT |
 | wyzheng/ugly-base | ^0.0.3 | v0.0.3 | MIT |
 
+The Guzzle entry is intentionally expressed as `constraint ^7.15.2; resolved
+7.15.5`: `^7.15.2` is the manifest floor/range, not a claim that the lock
+must contain exactly 7.15.2. The locked 7.15.5 resolution is retained and is
+the version covered by the audit evidence below.
+
 PHP and `ext-*` requirements are platform requirements, not Composer package
 licenses. The development-only direct tools are `fakerphp/faker` v1.24.1
 (MIT), `laravel/pint` v1.30.5 (MIT), `mockery/mockery` v1.6.15 (BSD-3-Clause),
