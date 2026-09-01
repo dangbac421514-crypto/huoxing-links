@@ -7,12 +7,13 @@ use App\Http\Controllers\Controller;
 use App\Jobs\PayVip;
 use App\Models\Domain;
 use App\Models\Link;
-use App\Models\LinkVisitLog;
 use App\Models\MiniProgram;
 use App\Models\Notice;
+use App\Models\UsagePeriod;
 use App\Models\User;
 use App\Models\VipLogs;
 use App\Models\VipPackage;
+use App\Services\EntitlementService;
 use App\Services\SystemConfig;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,7 +28,7 @@ class IndexController extends Controller
     use ApiResource;
 
     // 首页统计
-    public function index(Request $request)
+    public function index(Request $request, EntitlementService $entitlements)
     {
         $user = auth('api')->user();
         // 超级管理的首页统计
@@ -62,22 +63,15 @@ class IndexController extends Controller
 
         // 会员的统计
         if ($user->type === UserType::MEMBER) {
-            $vip = VipPackage::query()->find($user->vip_id);
             $res = [];
             $res['link_count'] = Link::query()->where('user_id', $user->id)->count();
-
-            if ($vip) {
-                $res['used_uv'] = LinkVisitLog::query()
+            $snapshot = $entitlements->resolve($user);
+            $res['used_uv'] = $snapshot->period
+                ? (int) (UsagePeriod::query()
                     ->where('user_id', $user->id)
-                    ->when($user->start_at, function ($query, $start_at) {
-                        $query->where('created_at', '>=', $start_at);
-                    })
-                    ->when($user->end_at, function ($query, $end_at) {
-                        $query->where('created_at', '>=', $end_at);
-                    })
-                    ->groupBy('device_uid')
-                    ->count();
-            }
+                    ->where('period_start', $snapshot->period->start()->setTimezone((string) config('app.timezone', 'UTC')))
+                    ->value('used_uv') ?? 0)
+                : 0;
             $res['vip_logs'] = VipLogs::with(['payment', 'vipPackage'])
                 ->where('user_id', $user->id)
                 ->orderByDesc('id')
