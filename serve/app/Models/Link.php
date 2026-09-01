@@ -29,6 +29,8 @@ class Link extends Model
         'type' => LinkType::class,
         'price' => Amount::class.':4',
         'cache' => 'json',
+        'manual_status' => 'boolean',
+        'health_status' => 'boolean',
     ];
 
     // 访问记录.
