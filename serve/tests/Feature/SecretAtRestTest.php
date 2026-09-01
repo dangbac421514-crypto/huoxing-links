@@ -2,8 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Enums\LinkType;
+use App\Enums\UserType;
 use App\Forms\BaseConfig;
+use App\Models\Link;
 use App\Models\MiniProgram;
+use App\Models\User;
+use App\Services\SanitizedLinkVisitRecorder;
 use App\Services\SecretConfigService;
 use App\Services\SystemConfig;
 use Illuminate\Support\Facades\Artisan;
@@ -49,6 +54,7 @@ final class SecretAtRestTest extends TestCase
         $files = File::glob(storage_path('app/private/secret-backups/*.json.enc'));
         $this->assertCount(1, $files);
         $this->backupFiles = $files;
+        $this->assertSame(0700, fileperms(dirname($files[0])) & 0777);
         $this->assertSame(0600, fileperms($files[0]) & 0777);
         $backup = json_decode(Crypt::decryptString(File::get($files[0])), true, 512, JSON_THROW_ON_ERROR);
         $this->assertSame($secret, $backup['sys_config:ali_sms_secret']);
@@ -84,6 +90,101 @@ final class SecretAtRestTest extends TestCase
 
         $this->assertStringStartsWith('enc:v1:', (string) DB::table('sys_configs')->where('slug', 'ali_sms_secret')->value('value'));
         $this->assertSame('system-config-secret', app(SecretConfigService::class)->get('ali_sms_secret'));
+    }
+
+    public function test_explicit_protected_system_config_reads_decrypt_for_legacy_consumers(): void
+    {
+        app(SecretConfigService::class)->set('wechat_pay_secret_key', 'payment-secret');
+
+        $this->assertSame('payment-secret', SystemConfig::get('wechat_pay_secret_key'));
+        $this->assertArrayNotHasKey('wechat_pay_secret_key', SystemConfig::get());
+    }
+
+    public function test_status_rejects_unreadable_marked_ciphertext_without_leaking_it(): void
+    {
+        $malformed = 'enc:v1:not-a-ciphertext';
+        DB::table('sys_configs')->updateOrInsert(
+            ['slug' => 'ali_sms_secret'],
+            ['value' => $malformed, 'desc' => 'secret']
+        );
+
+        $this->assertSame(1, Artisan::call('app:secret-storage-status', ['--json' => true]));
+        $output = Artisan::output();
+        $this->assertSame([
+            'plaintext_count' => 0,
+            'encrypted_count' => 1,
+            'compatible' => false,
+        ], json_decode(trim($output), true, 512, JSON_THROW_ON_ERROR));
+        $this->assertStringNotContainsString($malformed, $output);
+    }
+
+    public function test_visit_recorder_strips_secret_before_persisting_real_db_row(): void
+    {
+        $cache = app(SanitizedLinkVisitRecorder::class)->sanitize([
+            'title' => 'safe',
+            'params' => [
+                'appid' => 'appid',
+                'path' => 'pages/index',
+                'secret' => 'visit-secret',
+            ],
+        ]);
+        $log = app(SanitizedLinkVisitRecorder::class)->record([
+            'link_id' => 1,
+            'user_id' => 1,
+            'device_uid' => 'device',
+            'cache' => $cache,
+        ]);
+
+        $stored = DB::table('link_visit_logs')->where('id', $log->id)->value('cache');
+        $this->assertStringNotContainsString('visit-secret', $stored);
+        $this->assertSame('appid', json_decode($stored, true)['params']['appid']);
+        $this->assertArrayNotHasKey('secret', json_decode($stored, true)['params']);
+    }
+
+    public function test_legacy_encryption_scrubs_persisted_visit_secrets(): void
+    {
+        $secret = 'legacy-visit-secret';
+        DB::table('link_visit_logs')->insert([
+            'link_id' => 1,
+            'user_id' => 1,
+            'device_uid' => 'device',
+            'cache' => json_encode(['params' => ['appid' => 'appid', 'secret' => $secret]], JSON_THROW_ON_ERROR),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->artisan('app:encrypt-legacy-secrets')->assertExitCode(0);
+        $stored = DB::table('link_visit_logs')->value('cache');
+        $this->assertStringNotContainsString($secret, $stored);
+        $this->assertArrayNotHasKey('secret', json_decode($stored, true)['params']);
+    }
+
+    public function test_jump_controller_persists_only_sanitized_visit_params(): void
+    {
+        $user = User::query()->create([
+            'username' => 'jump-admin',
+            'password' => 'password',
+            'status' => true,
+            'type' => UserType::Admin,
+        ]);
+        $link = Link::query()->create([
+            'user_id' => $user->id,
+            'title' => 'safe jump',
+            'type' => LinkType::WORK_WECHAT,
+            'status' => true,
+            'icon' => '',
+            'description' => '',
+            'config' => ['url' => 'https://example.test/target'],
+            'expired_at' => now()->addHour(),
+        ]);
+
+        $response = $this->getJson('/api/link-target/'.$link->code.'?device_uid=controller-device');
+        $response->assertOk();
+
+        $stored = DB::table('link_visit_logs')->where('link_id', $link->id)->value('cache');
+        $this->assertNotNull($stored);
+        $this->assertStringNotContainsString('secret', $stored);
+        $this->assertStringNotContainsString('plaintext', $response->getContent());
     }
 
     public function test_deterministic_json_sorts_maps_recursively_but_preserves_lists(): void

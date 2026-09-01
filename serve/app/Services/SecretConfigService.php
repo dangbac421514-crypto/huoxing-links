@@ -73,6 +73,21 @@ final class SecretConfigService
         return self::SLUGS;
     }
 
+    public function canDecryptStoredValue(string $stored): bool
+    {
+        if (! Str::startsWith($stored, 'enc:v1:')) {
+            return false;
+        }
+
+        try {
+            Crypt::decryptString(Str::after($stored, 'enc:v1:'));
+
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
     private function assertSlug(string $slug): void
     {
         if (! in_array($slug, self::SLUGS, true)) {

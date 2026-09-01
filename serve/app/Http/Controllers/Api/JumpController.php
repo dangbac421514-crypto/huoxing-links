@@ -12,6 +12,7 @@ use App\Models\LinkVisitLog;
 use App\Models\MiniProgram;
 use App\Models\User;
 use App\Models\VipPackage;
+use App\Services\SanitizedLinkVisitRecorder;
 use EasyWeChat\MiniApp\Application as WechatApp;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -55,6 +56,17 @@ class JumpController extends Controller
             ->where('device_uid', $device_uid)
             ->orderByDesc('id')
             ->first(), 'cache', []);
+        $cache = app(SanitizedLinkVisitRecorder::class)->sanitize($cache);
+        $miniProgramSecret = null;
+        $isMiniProgram = $link->type === LinkType::MINI_PROGRAM || $link->type === LinkType::LANDING_MINI;
+        $miniProgram = null;
+        if ($isMiniProgram) {
+            $miniProgram = MiniProgram::query()->findOrFail(data_get($link, 'config.min_id'));
+            if (empty($miniProgram) || ! $miniProgram->is_enable) {
+                return $this->failed('当前小程序不能使用');
+            }
+            $miniProgramSecret = $miniProgram->secret;
+        }
         if (empty($cache)) {
             if (! $isAdmin) {
                 // 会员UV限制
@@ -75,15 +87,8 @@ class JumpController extends Controller
                 'description' => $link->description,
                 'icon' => Storage::url($link->icon),
             ];
-            if (
-                $link->type === LinkType::MINI_PROGRAM ||
-                $link->type === LinkType::LANDING_MINI
-            ) {
+            if ($isMiniProgram) {
                 // 跳转到小程序 参数
-                $mp = MiniProgram::query()->findOrFail(data_get($link, 'config.min_id'));
-                if (empty($mp) || ! $mp->is_enable) {
-                    return $this->failed('当前小程序不能使用');
-                }
                 if ($link->type === LinkType::LANDING_MINI) {
                     $qr = $this->getWechatNextQr($link);
                     if (empty($qr)) {
@@ -91,10 +96,9 @@ class JumpController extends Controller
                     }
                 }
                 $cache['params'] = [
-                    'appid' => $mp->app_id,
-                    'secret' => $mp->secret,
+                    'appid' => $miniProgram->app_id,
                     'qr' => $qr ?? null,
-                    'path' => data_get($link, 'config.url') ?: $mp->url,
+                    'path' => data_get($link, 'config.url') ?: $miniProgram->url,
                 ];
             } elseif ($link->type === LinkType::KING_DOC) {
                 $cache['params']['sid'] = str_replace('https://kdocs.cn/l/', '', data_get($link, 'config.url')); // del
@@ -167,7 +171,7 @@ class JumpController extends Controller
             // 小程序
             $miniApp = new WechatApp([
                 'app_id' => data_get($cache, 'params.appid'),
-                'secret' => data_get($cache, 'params.secret'),
+                'secret' => $miniProgramSecret,
             ]);
             try {
                 $res = $miniApp->getClient()->postJson('wxa/generatescheme', [
@@ -195,7 +199,7 @@ class JumpController extends Controller
         }
 
         if (isset($cache['target']) && $cache['target']) {
-            LinkVisitLog::query()->create([
+            app(SanitizedLinkVisitRecorder::class)->record([
                 'link_id' => $link->id,
                 'user_id' => $link->user_id,
                 'ip' => $request->getClientIp(),

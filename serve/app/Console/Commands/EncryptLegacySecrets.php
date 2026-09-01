@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\SanitizedLinkVisitRecorder;
 use App\Services\SecretConfigService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
@@ -60,6 +61,8 @@ final class EncryptLegacySecrets extends Command
                     'secret' => Crypt::encryptString($row->secret),
                 ]);
             }
+
+            $this->scrubLegacyVisitLogs();
         });
 
         $forget = static fn (): bool => Cache::forget('_db_system_config_');
@@ -94,5 +97,32 @@ final class EncryptLegacySecrets extends Command
         chmod($path, 0600);
 
         return $path;
+    }
+
+    private function scrubLegacyVisitLogs(): void
+    {
+        $sanitizer = app(SanitizedLinkVisitRecorder::class);
+
+        DB::table('link_visit_logs')
+            ->select(['id', 'cache'])
+            ->whereNotNull('cache')
+            ->chunkById(100, function ($rows) use ($sanitizer): void {
+                foreach ($rows as $row) {
+                    try {
+                        $cache = json_decode($row->cache, true, 512, JSON_THROW_ON_ERROR);
+                    } catch (\JsonException) {
+                        continue;
+                    }
+
+                    if (! is_array($cache) || ! isset($cache['params']) || ! is_array($cache['params']) || ! array_key_exists('secret', $cache['params'])) {
+                        continue;
+                    }
+
+                    $sanitized = $sanitizer->sanitize($cache);
+                    DB::table('link_visit_logs')->where('id', $row->id)->update([
+                        'cache' => json_encode($sanitized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
+                    ]);
+                }
+            });
     }
 }

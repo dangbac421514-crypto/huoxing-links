@@ -21,6 +21,10 @@ class SystemConfig
      */
     public static function get(?string $key = null, mixed $default = null): mixed
     {
+        if ($key !== null && in_array($key, self::PROTECTED_SLUGS, true)) {
+            return app(SecretConfigService::class)->get($key, $default);
+        }
+
         $config = Cache::get('_db_system_config_', function () {
             $db_config = [];
             $list = SysConfig::query()->get();

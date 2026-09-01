@@ -17,6 +17,7 @@ final class SecretStorageStatus extends Command
     {
         $plaintext = 0;
         $encrypted = 0;
+        $compatible = true;
 
         foreach ($secrets->secretSlugs() as $slug) {
             $raw = DB::table('sys_configs')->where('slug', $slug)->value('value');
@@ -27,6 +28,7 @@ final class SecretStorageStatus extends Command
 
             if (str_starts_with($raw, 'enc:v1:')) {
                 $encrypted++;
+                $compatible = $secrets->canDecryptStoredValue($raw) && $compatible;
             } else {
                 $plaintext++;
             }
@@ -48,11 +50,11 @@ final class SecretStorageStatus extends Command
         $status = [
             'plaintext_count' => $plaintext,
             'encrypted_count' => $encrypted,
-            'compatible' => true,
+            'compatible' => $compatible,
         ];
 
         $this->line(json_encode($status, JSON_THROW_ON_ERROR));
 
-        return self::SUCCESS;
+        return $compatible ? self::SUCCESS : self::FAILURE;
     }
 }
