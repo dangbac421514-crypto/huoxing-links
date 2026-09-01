@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\InstantCast;
 use App\Enums\LinkType;
 use App\Traits\BelongToUser;
 use Illuminate\Database\Eloquent\Model;
@@ -38,6 +39,8 @@ class Link extends Model
         'cache' => 'json',
         'manual_status' => 'boolean',
         'health_status' => 'boolean',
+        'health_checked_at' => InstantCast::class,
+        'health_error_code' => 'string',
         'target_version' => 'string',
     ];
 

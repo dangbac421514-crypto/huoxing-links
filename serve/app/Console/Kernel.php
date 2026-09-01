@@ -14,8 +14,8 @@ class Kernel extends ConsoleKernel
     {
         // 会员到期
         $schedule->command('app:vip-expired')->hourly()->withoutOverlapping();
-        // URL状态检测
-        $schedule->command('app:chk-link')->daily();
+        // 链接健康检查
+        $schedule->command('app:links-health-check')->everyTenMinutes()->withoutOverlapping(9);
     }
 
     /**

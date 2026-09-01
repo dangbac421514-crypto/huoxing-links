@@ -2,109 +2,90 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Domain;
 use App\Models\Link;
-use GuzzleHttp\Client;
+use App\Services\Health\LinkHealthCheckService;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
-use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
-class ChkLinkStatus extends Command
+final class ChkLinkStatus extends Command
 {
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
-    protected $signature = 'app:chk-link {link_id?}';
+    protected $signature = 'app:links-health-check {link_id?}';
 
-    /**
-     * The console command desc.
-     *
-     * @var string
-     */
-    protected $desc = 'links URL状态检测';
+    protected $aliases = ['app:chk-link'];
 
-    /**
-     * Execute the console command.
-     */
-    public function handle()
+    protected $description = '检查链接健康状态';
+
+    public function handle(LinkHealthCheckService $health): int
     {
-        $link_id = $this->argument('link_id');
-        if ($link_id) {
-            $this->che_link($link_id);
-        } else {
-            $this->com_default();
+        $rawId = $this->argument('link_id');
+        if ($rawId !== null) {
+            return $this->checkOne($rawId, $health);
         }
 
-        return Command::SUCCESS;
-    }
-
-    private function com_default(): void
-    {
-        Link::query()
-            ->where('status', 1)
-            ->where(function ($query) {
-                $query->where('expired_at', '<', now());
-            })
-            ->update(['status' => 0]);
-        Domain::query()
-            ->where('enable', true)
-            ->chunk(100, function ($list) {
-                foreach ($list as $item) {
-                    $code = $this->chk_url($item->url);
-                    if ($code == Response::HTTP_OK) {
-                        // 本来就 200 不做更改
-                        Link::query()
-                            ->where('status', 0)
-                            ->whereJsonContains('config->domain_id', $item->id)
-                            ->where('expired_at', '>', now())
-                            ->update(['status' => 1]);
-                    } else {
-                        Link::query()
-                            ->where('status', 1)
-                            ->whereJsonContains('config->domain_id', $item->id)
-                            ->where('expired_at', '>', now())
-                            ->update(['status' => 0]);
+        $checked = 0;
+        $failed = 0;
+        $at = CarbonImmutable::now('Asia/Shanghai');
+        Link::query()->orderBy('id')->chunkById(100, function ($links) use ($health, $at, &$checked, &$failed): void {
+            foreach ($links as $link) {
+                try {
+                    $health->check($link, $at);
+                    $checked++;
+                    if (! (bool) $link->fresh()->getAttribute('health_status')) {
+                        $failed++;
                     }
-                }
-            });
-    }
-
-    private function che_link($link_id): void
-    {
-        $link = Link::query()->find($link_id);
-        $domain_id = data_get($link, 'config.domain_id');
-        if ($domain_id) {
-            $domain = Domain::query()->find($domain_id);
-            if ($domain->url) {
-                $code = $this->chk_url($domain->url);
-                if ($code == Response::HTTP_OK) {
-                    if (! $link->status) {
-                        $link->update(['status' => 1]);
-                    }
-                } else {
-                    if ($link->status) {
-                        $link->update(['status' => 0]);
-                    }
+                } catch (Throwable) {
+                    // Keep all-mode processing alive and expose only a count;
+                    // provider/configuration details never reach command IO.
+                    $failed++;
                 }
             }
-        }
+        });
+
+        $this->info("checked={$checked} failed={$failed}");
+
+        // A recorded unhealthy result is a successful command run. The
+        // persisted health fields carry the provider outcome; a non-zero
+        // status is reserved for invalid arguments or processing failures.
+        return self::SUCCESS;
     }
 
-    private function chk_url($url)
+    private function checkOne(mixed $rawId, LinkHealthCheckService $health): int
     {
-        $client = new Client([
-            'headers' => [
-                'verify' => false,
-            ],
-        ]);
-        try {
-            $rs = $client->head("{$url}?code=1234");
-            $code = $rs->getStatusCode();
-        } catch (\Exception $e) {
-            $code = $e->getCode();
+        if (is_int($rawId)) {
+            $rawId = (string) $rawId;
         }
 
-        return $code;
+        if (! is_string($rawId) || preg_match('/^[1-9][0-9]*$/D', $rawId) !== 1) {
+            $this->error('invalid link_id');
+
+            return self::INVALID;
+        }
+
+        $id = filter_var($rawId, FILTER_VALIDATE_INT);
+        if ($id === false || $id < 1) {
+            $this->error('invalid link_id');
+
+            return self::INVALID;
+        }
+
+        $link = Link::query()->find($id);
+        if (! $link) {
+            $this->error('link not found');
+
+            return self::INVALID;
+        }
+
+        try {
+            $health->check($link, CarbonImmutable::now('Asia/Shanghai'));
+            $failed = (bool) $link->fresh()->getAttribute('health_status') ? 0 : 1;
+            $this->info("checked=1 failed={$failed}");
+
+            return self::SUCCESS;
+        } catch (Throwable) {
+            $this->error('checked=1 failed=1');
+
+            return self::FAILURE;
+        }
     }
 }
