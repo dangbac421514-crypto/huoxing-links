@@ -35,8 +35,7 @@ fi
 "$apksigner_bin" verify --verbose --print-certs "$apk"
 
 if unzip -Z1 "$apk" \
-  | grep -E '\.(jks|keystore|properties)$' \
-  | grep -v '^META-INF/'; then
+  | grep -Ei '(^|/)([^/]+\.(jks|keystore)|local\.properties|keystore\.properties)$'; then
   echo "APK contains a signing/configuration file" >&2
   exit 1
 fi
