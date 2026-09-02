@@ -13,6 +13,10 @@ final class DouyinReviewPageTest extends TestCase
         $response->assertOk()
             ->assertHeader('Referrer-Policy', 'no-referrer')
             ->assertHeader('X-Content-Type-Options', 'nosniff')
+            ->assertHeader(
+                'Content-Security-Policy',
+                "default-src 'self'; img-src 'self'; style-src 'unsafe-inline'; script-src 'none'; connect-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+            )
             ->assertSee('极风小助手')
             ->assertSee('已审核链接的管理与分享工具')
             ->assertSee('用户主动选择抖音好友或群聊')

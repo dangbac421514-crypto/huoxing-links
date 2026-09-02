@@ -8,20 +8,37 @@ local_properties="$android_dir/local.properties"
 had_local_properties=false
 local_properties_mode=""
 local_properties_backup="$config_root/original-local.properties"
+local_properties_sha256=""
 
 if [[ -e "$local_properties" ]]; then
   had_local_properties=true
   local_properties_mode="$(stat -f '%Lp' "$local_properties")"
+  local_properties_sha256="$(shasum -a 256 "$local_properties" | awk '{print $1}')"
   cp -p "$local_properties" "$local_properties_backup"
 fi
 
-cleanup() {
-  if [[ "$had_local_properties" == true ]]; then
+restore_local_properties() {
+  if [[ "$had_local_properties" == true && -f "$local_properties_backup" ]]; then
     cp -p "$local_properties_backup" "$local_properties"
     chmod "$local_properties_mode" "$local_properties"
-  else
+  elif [[ "$had_local_properties" == false && -e "$local_properties" ]]; then
     rm -f "$local_properties"
   fi
+}
+
+assert_original_local_properties_restored() {
+  if [[ "$had_local_properties" == true ]]; then
+    test -f "$local_properties"
+    test "$(stat -f '%Lp' "$local_properties")" = "$local_properties_mode"
+    test "$(shasum -a 256 "$local_properties" | awk '{print $1}')" = "$local_properties_sha256"
+    cmp -s "$local_properties_backup" "$local_properties"
+  else
+    test ! -e "$local_properties"
+  fi
+}
+
+cleanup() {
+  restore_local_properties
   rm -rf "$config_root"
 }
 trap cleanup EXIT
@@ -101,4 +118,6 @@ cp "$release_apk" "$uppercase_local_properties_apk"
 sign_fixture "$uppercase_local_properties_apk"
 assert_verifier_rejects "$uppercase_local_properties_apk"
 
+restore_local_properties
+assert_original_local_properties_restored
 echo "release tooling test passed"
