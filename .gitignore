@@ -2,3 +2,13 @@
 .vscode
 .fleet
 .worktrees/
+android/.gradle/
+android/local.properties
+android/**/build/
+android/*.iml
+android/.idea/
+android/keystore.properties
+android/**/*.jks
+android/**/*.keystore
+android/**/*.apk
+android/**/*.aab
