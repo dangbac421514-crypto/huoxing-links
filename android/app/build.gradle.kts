@@ -22,15 +22,6 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 
-// AndroidX 1.19.0 requires AGP 9.1/API 37, while this shell is intentionally
-// pinned to the API 36 and AGP 8.13 baseline from the approved design.
-configurations.configureEach {
-    resolutionStrategy.force(
-        "androidx.core:core:1.16.0",
-        "androidx.core:core-ktx:1.16.0",
-    )
-}
-
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
