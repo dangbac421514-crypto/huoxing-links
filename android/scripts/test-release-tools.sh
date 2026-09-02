@@ -46,6 +46,8 @@ keytool -list \
 
 grep -Fx 'DOUYIN_CLIENT_KEY=awm0sswt6y17zkhu' "$local_properties"
 grep -Fx 'DOUYIN_APPROVED_SHARE_URL=https://link.example.test/?code=abc12345' "$local_properties"
+grep -Fx 'DOUYIN_CARD_TITLE=极风小助手' "$local_properties"
+grep -Fx 'DOUYIN_CARD_DESCRIPTION=已审核链接的管理与分享工具' "$local_properties"
 if grep -qi '^client_secret=' "$local_properties"; then
   echo "client_secret must not be written to local.properties" >&2
   exit 1

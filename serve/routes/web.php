@@ -5,5 +5,6 @@ use App\Http\Controllers\JumpController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [Controller::class, 'welcome']);
+Route::get('/douyin/jifeng-assistant', [JumpController::class, 'douyinReview']);
 Route::get('/j/{code}', [JumpController::class, 'show']);
 Route::get('/qr/{code}', [JumpController::class, 'qr'])->where('code', '[A-Za-z0-9]{8}');

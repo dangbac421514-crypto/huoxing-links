@@ -42,8 +42,8 @@ trap cleanup EXIT
   printf 'sdk.dir=%s\n' "$sdk_path"
   printf 'DOUYIN_CLIENT_KEY=awm0sswt6y17zkhu\n'
   printf 'DOUYIN_APPROVED_SHARE_URL=%s\n' "$approved_share_url"
-  printf 'DOUYIN_CARD_TITLE=添加微信\n'
-  printf 'DOUYIN_CARD_DESCRIPTION=长按识别二维码，添加我为好友\n'
+  printf 'DOUYIN_CARD_TITLE=极风小助手\n'
+  printf 'DOUYIN_CARD_DESCRIPTION=已审核链接的管理与分享工具\n'
   printf 'DOUYIN_CARD_THUMB_URL=%s\n' "$thumb_url"
 } >"$temporary_properties"
 chmod 600 "$temporary_properties"

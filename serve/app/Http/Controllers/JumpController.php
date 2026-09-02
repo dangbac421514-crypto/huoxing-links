@@ -7,6 +7,18 @@ use Illuminate\View\View;
 
 class JumpController extends Controller
 {
+    public function douyinReview(): Response
+    {
+        return response()
+            ->view('jump/douyin-review')
+            ->header('Referrer-Policy', 'no-referrer')
+            ->header('X-Content-Type-Options', 'nosniff')
+            ->header(
+                'Content-Security-Policy',
+                "default-src 'self'; img-src 'self'; style-src 'unsafe-inline'; script-src 'none'; connect-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+            );
+    }
+
     public function show(string $code): View
     {
         return view('jump/wechat');
