@@ -13,7 +13,7 @@ use Illuminate\Support\Str;
 
 trait CreatesLinkFixtures
 {
-    protected function activeMemberWithUvLimit(int $limit): User
+    protected function activeMemberWithUvLimit(int $limit, ?CarbonImmutable $activeAt = null): User
     {
         $package = VipPackage::query()->create([
             'name' => 'Task 2 package '.Str::lower(Str::random(8)),
@@ -30,7 +30,7 @@ trait CreatesLinkFixtures
                 'allow_type' => array_fill_keys(LinkType::getAllType(), true),
             ],
         ]);
-        $start = CarbonImmutable::now('Asia/Shanghai')->subMinute();
+        $start = ($activeAt ?? CarbonImmutable::now('Asia/Shanghai'))->subMinute();
 
         return User::factory()->create([
             'status' => true,
@@ -41,9 +41,9 @@ trait CreatesLinkFixtures
     }
 
     /** @param array<string, mixed> $config */
-    protected function linkForType(LinkType $type, array $config = []): Link
+    protected function linkForType(LinkType $type, array $config = [], ?CarbonImmutable $activeAt = null): Link
     {
-        $owner = $this->activeMemberWithUvLimit(100);
+        $owner = $this->activeMemberWithUvLimit(100, $activeAt);
         $defaults = match ($type) {
             LinkType::MINI_PROGRAM, LinkType::LANDING_MINI => ['min_id' => $this->miniProgramFor($owner)->id],
             LinkType::WORK_WECHAT => ['url' => 'https://work.weixin.qq.com/ca/example'],
@@ -66,9 +66,9 @@ trait CreatesLinkFixtures
         ]);
     }
 
-    protected function miniProgramLink(): Link
+    protected function miniProgramLink(?CarbonImmutable $activeAt = null): Link
     {
-        return $this->linkForType(LinkType::MINI_PROGRAM);
+        return $this->linkForType(LinkType::MINI_PROGRAM, [], $activeAt);
     }
 
     /** @param array<int, array<string, mixed>> $qrs */

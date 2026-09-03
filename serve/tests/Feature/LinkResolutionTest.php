@@ -163,7 +163,8 @@ final class LinkResolutionTest extends TestCase
 
     public function test_target_cache_uses_update_version_and_never_contains_public_or_secret_values(): void
     {
-        $link = $this->miniProgramLink();
+        $sameSecond = CarbonImmutable::parse('2026-09-02 12:00:00', 'Asia/Shanghai');
+        $link = $this->miniProgramLink($sameSecond);
         $generator = new class implements MiniProgramSchemeGenerator
         {
             public int $calls = 0;
@@ -197,7 +198,7 @@ final class LinkResolutionTest extends TestCase
             $this->assertStringNotContainsString('task-2-secret', $key);
         }
 
-        Carbon::setTestNow(CarbonImmutable::parse('2026-09-02 12:00:00', 'Asia/Shanghai'));
+        Carbon::setTestNow($sameSecond);
         try {
             $link->update(['title' => 'same-second-first']);
             $this->withUnencryptedCookies(['visitor_id' => $visitor])->withCredentials()
