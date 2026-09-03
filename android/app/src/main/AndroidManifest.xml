@@ -11,12 +11,15 @@
 
     <application
         android:allowBackup="false"
+        android:icon="@drawable/jifeng_assistant_icon"
         android:label="@string/app_name"
+        android:name=".JifengApplication"
         android:supportsRtl="true"
         android:theme="@style/Theme.JifengAssistant">
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
