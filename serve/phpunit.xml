@@ -19,10 +19,25 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
+        <env name="APP_TIMEZONE" value="Asia/Shanghai"/>
+        <env name="APP_KEY" value="base64:dGVzdC1rZXl0ZXN0LWtleXRlc3Qta2V5dGVzdC1rZXk="/>
+        <env name="APP_VISITOR_HASH_KEY" value="test-visitor-hash-key-not-secret"/>
+        <env name="APP_VISITOR_TOKEN_KEY" value="MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="/>
         <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="DB_CONNECTION" value="mysql"/>
+        <env name="DB_HOST" value="127.0.0.1"/>
+        <env name="DB_PORT" value="33067"/>
+        <env name="DB_DATABASE" value="link_saas_test"/>
+        <env name="DB_USERNAME" value="link_test"/>
+        <env name="DB_PASSWORD" value="link_test_password"/>
+        <env name="DB_TIMEZONE" value="+08:00"/>
+        <env name="REDIS_HOST" value="127.0.0.1"/>
+        <env name="REDIS_PORT" value="6390"/>
+        <env name="REDIS_DB" value="14"/>
+        <env name="REDIS_CACHE_DB" value="15"/>
+        <env name="REDIS_PREFIX" value="link_saas_test_"/>
+        <env name="CACHE_STORE" value="array"/>
         <env name="CACHE_DRIVER" value="array"/>
-        <!-- <env name="DB_CONNECTION" value="sqlite"/> -->
-        <!-- <env name="DB_DATABASE" value=":memory:"/> -->
         <env name="MAIL_MAILER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="QUEUE_CONNECTION" value="sync"/>

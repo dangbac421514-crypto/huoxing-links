@@ -3,6 +3,7 @@
 namespace App\Exceptions;
 
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
+use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
 class Handler extends ExceptionHandler
@@ -26,5 +27,17 @@ class Handler extends ExceptionHandler
         $this->reportable(function (Throwable $e) {
             //
         });
+    }
+
+    public function render($request, Throwable $exception): Response
+    {
+        if ($exception instanceof BusinessRuleException && $request->expectsJson()) {
+            return response()->json([
+                'code' => $exception->errorCode,
+                'message' => $exception->getMessage(),
+            ], $exception->status);
+        }
+
+        return parent::render($request, $exception);
     }
 }

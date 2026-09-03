@@ -4,8 +4,8 @@ namespace App\Http\Requests;
 
 use App\Enums\CodeMode;
 use App\Services\SystemConfig;
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Support\Facades\Cache;
 
 class RegisterRequest extends FormRequest
 {
@@ -20,54 +20,28 @@ class RegisterRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
-        $is_open = SystemConfig::get('verify_code_is_open');
-        if ($is_open) {
-            $code_mode = SystemConfig::get('send_code_mode');
-            $rule = ($code_mode == CodeMode::Email->value) ? 'email' : 'regex:/^1[3-9]\d{9}$/';
-
-            return [
-                'username' => [
-                    'required',
-                    $rule,
-                    'unique:users,username',
-                ],
-                'password' => 'required|min:6|confirmed',
-                'captcha' => ['required', function (string $attribute, mixed $value, \Closure $fail) {
-                    $test_code = config('services.ali_sms.test_code');
-                    if (empty($test_code) || $value != $test_code) {
-                        $tel = $this->input('username');
-                        $captcha = Cache::get('sms_captcha_'.$tel);
-                        if ((int) $captcha !== (int) $value) {
-                            $fail('验证码错误！');
-                        }
-                    }
-                }],
-                'referral_code' => '', // 推荐码
-            ];
-        }
+        $mode = CodeMode::fromConfiguration(SystemConfig::get('send_code_mode'));
 
         return [
             'username' => [
                 'required',
+                $mode === CodeMode::SMS ? 'regex:/^1[3-9]\d{9}$/' : 'email',
                 'unique:users,username',
             ],
             'password' => 'required|min:6|confirmed',
-            'referral_code' => '', // 推荐码
+            'code' => ['required', 'digits:6'],
+            'referral_code' => 'nullable|string|exists:users,referral_code', // 推荐码
         ];
     }
 
     public function messages(): array
     {
-        $code_mode = SystemConfig::get('send_code_mode');
-        $is_open = SystemConfig::get('verify_code_is_open');
-        $txt = '用户名';
-        if (! empty($is_open)) {
-            $txt = ($code_mode === CodeMode::Email->value) ? '邮箱' : '手机号';
-        }
+        $mode = CodeMode::fromConfiguration(SystemConfig::get('send_code_mode'));
+        $txt = $mode === CodeMode::Email ? '邮箱' : '手机号';
 
         return [
             'username.required' => "请输入{$txt}！",
@@ -77,7 +51,8 @@ class RegisterRequest extends FormRequest
             'password.required' => '请输入密码！',
             'password.confirmed' => '密码不一致！',
             'password.min' => '密码不少于6位！',
-            'captcha.required' => '请输入短信验证码！',
+            'code.required' => '请输入验证码！',
+            'code.digits' => '验证码格式错误！',
             'agent_id.required' => '请选择代理套餐！',
             'referral_code.required' => '请输入推荐码！',
         ];

@@ -1,0 +1,23 @@
+services:
+  mysql:
+    image: mysql:8.0
+    ports: ["33067:3306"]
+    environment:
+      MYSQL_DATABASE: link_saas_test
+      MYSQL_USER: link_test
+      MYSQL_PASSWORD: link_test_password
+      MYSQL_ROOT_PASSWORD: link_test_root_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-ulink_test", "-plink_test_password"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    ports: ["6390:6379"]
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

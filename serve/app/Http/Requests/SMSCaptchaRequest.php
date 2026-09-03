@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Enums\CodeMode;
 use App\Services\SystemConfig;
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 class SMSCaptchaRequest extends FormRequest
@@ -19,21 +20,25 @@ class SMSCaptchaRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
-        $code_mode = SystemConfig::get('send_code_mode');
-        $rule = $code_mode == CodeMode::Email->value ? 'email' : 'regex:/^1[3-9]\d{9}$/';
-
-        return [
+        $mode = CodeMode::fromConfiguration(SystemConfig::get('send_code_mode'));
+        $rules = [
             'tel' => [
                 'required',
-                $rule,
+                $mode === CodeMode::SMS ? 'regex:/^1[3-9]\d{9}$/' : 'email',
             ],
-            'captcha' => 'required|captcha_api:'.request()->input('key').',math',
-            'key' => 'required',
+            'purpose' => ['required', 'in:register,reset_password'],
         ];
+
+        if ((bool) SystemConfig::get('verify_code_is_open')) {
+            $rules['captcha'] = ['required', 'string'];
+            $rules['key'] = ['required', 'string'];
+        }
+
+        return $rules;
     }
 
     public function messages(): array
@@ -42,8 +47,9 @@ class SMSCaptchaRequest extends FormRequest
             'tel.required' => '请输入手机号！',
             'tel.regex' => '手机号格式错误！',
             'tel.email' => '不是有效的邮箱！',
-            'captcha.captcha_api' => '图片验证码错误！',
             'captcha.required' => '请输入验证码！',
+            'purpose.required' => '验证码用途无效！',
+            'purpose.in' => '验证码用途无效！',
         ];
     }
 }

@@ -13,9 +13,9 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule): void
     {
         // 会员到期
-        $schedule->command('app:vip-expired')->hourly();
-        // URL状态检测
-        Schedule::command('app:chk-link')->daily();
+        $schedule->command('app:vip-expired')->hourly()->withoutOverlapping();
+        // 链接健康检查
+        $schedule->command('app:links-health-check')->everyTenMinutes()->withoutOverlapping(9);
     }
 
     /**

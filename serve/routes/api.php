@@ -54,6 +54,7 @@ Route::middleware(ApiAuth::class)->group(function (Router $router) {
     $router->get('/min-programs', [MiniProgramController::class, 'home']); // 创建链接下拉数据源
 
     // 链接
+    $router->patch('/links/{id}/status', [LinkController::class, 'status']);
     $router->apiResource('/links', LinkController::class);
     $router->get('link-list', [LinkController::class, 'link_list']); // 获取下拉数据源
 

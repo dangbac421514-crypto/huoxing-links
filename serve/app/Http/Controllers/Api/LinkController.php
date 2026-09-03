@@ -6,13 +6,25 @@ use App\Enums\LinkType;
 use App\Enums\SwitchType;
 use App\Enums\UserType;
 use App\Enums\UVLimitType;
-use App\Models\Domain;
+use App\Exceptions\BusinessRuleException;
+use App\Exceptions\LinkResolutionException;
+use App\Exceptions\MiniProgramForbidden;
 use App\Models\Link;
+use App\Services\EntitlementService;
+use App\Services\LinkAccessPolicy;
+use App\Services\LinkShareUrl;
+use App\Services\MiniProgramReferencePolicy;
+use App\Services\QrRotationService;
+use App\Support\LinkError;
+use App\Support\LinkTypeParser;
+use Carbon\CarbonImmutable;
+use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Enum;
+use Symfony\Component\HttpFoundation\Response;
 use Ugly\Base\Http\Controllers\FormController;
 use Ugly\Base\Services\FormService;
 
@@ -20,21 +32,19 @@ class LinkController extends FormController
 {
     public function index(Request $request): JsonResponse
     {
-        $username = $request->input('username', null);
-        $query = Link::search([
-            'type' => '=',
-            'title' => 'like',
-        ], ['user:id,username'])->withCount(['visitLogs as visit_uv_count' => function ($query) {
-            $query->select(DB::raw('COUNT(DISTINCT device_uid)'));
-        }])
-            ->when(
-                auth('api')->user()->type !== UserType::Admin,
-                fn ($query) => $query->where('user_id', auth('api')->user()->id),
-            )
-            ->when($username, fn ($query) => $query->whereHas('user', fn ($query) => $query->where('username', 'like', "%{$username}%")))
+        $user = auth('api')->user();
+        $query = Link::search(['type' => '=', 'title' => 'like'], ['user:id,username'])
+            ->withCount(['visitLogs as visit_uv_count' => function ($query) {
+                $query->select(DB::raw('COUNT(DISTINCT visitor_hash)'));
+            }])
+            ->when(! $this->isAdmin($user), fn ($query) => $query->where('user_id', $user->id))
+            ->when($request->filled('username'), fn ($query) => $query->whereHas(
+                'user',
+                fn ($query) => $query->where('username', 'like', '%'.$request->string('username')->toString().'%'),
+            ))
             ->orderByDesc('id');
 
-        return $this->paginate($query);
+        return $this->paginate($query, fn (Link $link): array => $this->publicLink($link));
     }
 
     protected function form(): FormService
@@ -45,154 +55,269 @@ class LinkController extends FormController
             'icon' => 'required',
             'description' => 'nullable|string|max:500',
             'remark' => 'nullable|string',
-            'expired_at' => 'string',
+            'expired_at' => 'prohibited',
         ];
         if (request('type') == LinkType::LANDING_MINI->value) {
             unset($rule['title'], $rule['description']);
         }
 
         $form = FormService::make(Link::class);
-        $form->validate(fn (FormService $form) => array_merge($rule, $this->getConfigRules()), [
+        $form->validate(fn () => array_merge($rule, $this->getConfigRules()), [
             'config.wx.qr.*.name.required' => '请填写二维码名称',
             'config.wx.qr.*.sort.required' => '请填写二维码排序',
             'config.wx.qr.*.path.required' => '请上传二维码',
             'config.url.starts_with' => '请正确上传草料图片类生成的二维码图片',
         ]);
 
-        $user = auth('api')->user();
-        $form->policy(function (FormService $form) use ($user) {
-            if ($user->type === UserType::Admin) {
-                return true;
+        $actor = auth('api')->user();
+        $form->policy(function (FormService $form) use ($actor): bool {
+            $type = LinkTypeParser::parse(request()->input('type'));
+            if (! $type) {
+                return false;
             }
-            if ($form->isCreate()) {
-                $config = data_get($user->getPackageConfig(), 'config');
 
-                // 类型限制
-                $typeName = LinkType::from((int) request()->input('type'))->name;
-                if (! data_get($config, 'allow_type.'.$typeName)) {
-                    return '当前套餐不支持该类型链接！';
+            $snapshot = null;
+            if (! $this->isAdmin($actor)) {
+                $snapshot = app(EntitlementService::class)->assertActive(
+                    $actor,
+                    CarbonImmutable::now('Asia/Shanghai'),
+                );
+                if (! in_array('*', $snapshot->allowTypes, true) && ! in_array($type->name, $snapshot->allowTypes, true)) {
+                    throw new BusinessRuleException(LinkError::LINK_TYPE_FORBIDDEN, '当前套餐不支持该类型链接！');
                 }
-
-                // 会员，数量限制
-                if (
-                    $user->type === UserType::MEMBER &&
-                    data_get($config, 'count_limit') <= Link::query()->where('user_id', $user->id)->count()
-                ) {
-                    return '拥有的链接数量已达上限！';
+                if ($form->isCreate() && $snapshot->linkLimit <= Link::query()->where('user_id', $actor->id)->count()) {
+                    throw new BusinessRuleException('LINK_LIMIT_EXCEEDED', '拥有的链接数量已达上限！');
                 }
-
-                // 是否允许自定义落地页
-                $inputConfig = request()->input('config');
                 if (
-                    ! data_get($config, 'cur_index') &&
-                    (
-                        data_get($inputConfig, 'wx.avatar') ||
-                        data_get($inputConfig, 'wx.title') ||
-                        data_get($inputConfig, 'wx.sub_title')
+                    $type === LinkType::LANDING_MINI
+                    && ! $snapshot->curIndex
+                    && (
+                        data_get($form->safeFormData, 'config.wx.avatar')
+                        || data_get($form->safeFormData, 'config.wx.title')
+                        || data_get($form->safeFormData, 'config.wx.sub_title')
                     )
                 ) {
-                    return '当前套餐不允许自定义落地页！';
+                    throw new BusinessRuleException('CUSTOM_LANDING_FORBIDDEN', '当前套餐不允许自定义落地页！');
                 }
             }
 
-            return $form->isCreate() || $form->getModel()->user_id === $user->id;
+            if (in_array($type, [LinkType::MINI_PROGRAM, LinkType::LANDING_MINI], true)) {
+                try {
+                    app(MiniProgramReferencePolicy::class)->assertAllowed(
+                        $actor,
+                        (int) data_get($form->safeFormData, 'config.min_id'),
+                    );
+                } catch (MiniProgramForbidden $exception) {
+                    throw new BusinessRuleException($exception->errorCode, $exception->getMessage(), 403);
+                }
+            }
+
+            if ($form->isEdit() && $form->getModel()->user_id !== $actor->id && ! $this->isAdmin($actor)) {
+                throw new BusinessRuleException('LINK_FORBIDDEN', '无权操作该链接', 403);
+            }
+
+            return true;
         });
 
-        $form->saving(function (FormService $form) use ($user) {
+        $form->saving(function (FormService $form) use ($actor): void {
+            $type = LinkTypeParser::parse(
+                $form->safeFormData['type'] ?? $form->getModel()->getRawOriginal('type'),
+            );
+
+            if ($type === LinkType::LANDING_MINI) {
+                $config = $form->safeFormData['config'] ?? null;
+                if (is_array($config) && isset($config['wx']) && is_array($config['wx'])) {
+                    if (isset($config['wx']['qr']) && is_array($config['wx']['qr'])) {
+                        foreach ($config['wx']['qr'] as $index => $item) {
+                            if (is_array($item)) {
+                                $config['wx']['qr'][$index]['visit_uv'] = 0;
+                            }
+                        }
+                    }
+                    $form->safeFormData['config'] = $config;
+                }
+
+                if ($form->isCreate()) {
+                    $wx = is_array($config['wx'] ?? null) ? $config['wx'] : [];
+                    $form->safeFormData['title'] = $wx['title'] ?? '';
+                    $form->safeFormData['description'] = $wx['sub_title'] ?? '';
+                }
+            }
+
             if ($form->isCreate()) {
                 $form->safeFormData['status'] = 1;
-                $form->safeFormData['user_id'] = $user->id;
-
-                if ($form->safeFormData['type'] == LinkType::LANDING_MINI->value) {
-                    foreach ($form->safeFormData['config']['wx']['qr'] as &$it) {
-                        $it['visit_uv'] = 0;
-                    }
-                    $form->safeFormData['title'] = $form->safeFormData['config']['wx']['title'] ?? '';
-                    $form->safeFormData['description'] = $form->safeFormData['config']['wx']['sub_title'] ?? '';
-                }
-                $form->safeFormData['expired_at'] = now()->addMonth();
+                $form->safeFormData['manual_status'] = 1;
+                $form->safeFormData['health_status'] = 1;
+                $form->safeFormData['expired_at'] = null;
+                $form->safeFormData['user_id'] = $actor->id;
             }
         });
 
         return $form;
     }
 
-    // 详情.
     public function show($id): JsonResponse
     {
-        $link = Link::query()
-            ->where(function ($query) {
-                if (auth('api')->user()->type !== UserType::Admin) {
-                    $query->where('user_id', auth('api')->user()->id);
-                }
-            })
-            ->findOrFail($id)
-            ->toArray();
-        $domain = Domain::query()
-            ->find(data_get($link, 'config.domain_id'));
-        $link['share_link'] = $domain ? rtrim($domain->url, '/').'?code='.data_get($link, 'code') : '';
+        $link = $this->scopedQuery()->findOrFail($id);
 
-        return $this->success($link);
+        return $this->success($this->publicLink($link));
     }
 
-    // 生成config字段的验证规则.
-    private function getConfigRules(): array
+    public function update($id): JsonResponse
     {
-        $user = auth('api')->user();
-        $iptType = request()->integer('type');
-        $is_wx = $iptType === LinkType::LANDING_MINI->value;
+        // Scope the resource before FormService validates or evaluates any
+        // business payload, so foreign tenants cannot probe validation state.
+        $this->scopedQuery()->findOrFail($id);
 
-        $res = [
-            'config.domain_id' => [
-                'required',
-                Rule::exists('domains', 'id')->where('enable', true),
-            ],
-            'config.url' => 'required_unless:type,'.LinkType::LANDING_MINI->value,
-        ];
-
-        if ($iptType && in_array($iptType, [LinkType::MINI_PROGRAM->value, LinkType::LANDING_MINI->value])) {
-            $res['config.min_id'] = 'required';
-            $res['config.domain_id'] = '';
-            $res['config.url'] = '';
-        }
-
-        if ($iptType === LinkType::CLI_QR->value) {
-            $res['config.url'] = 'required|url|starts_with:https://qr61.cn/';
-        }
-
-        if ($iptType === LinkType::QR_QQ->value) {
-            $res['config.url'] = 'required|url|starts_with:https://ym.link/';
-        }
-
-        return $is_wx ? array_merge($res, [
-            'config.wx' => [
-                'required_if:type,'.LinkType::LANDING_MINI->value,
-                'array',
-            ],
-            'config.wx.avatar' => 'nullable|string',
-            'config.wx.title' => 'nullable|string',
-            'config.wx.sub_title' => 'nullable|string',
-            'config.wx.qr' => 'required|array',
-            'config.wx.qr.*.sort' => 'required|integer|min:0|max:200',
-            'config.wx.qr.*.name' => 'required|string',
-            'config.wx.qr.*.path' => 'required|string',
-            'config.wx.qr.*.uv_limit_num' => 'nullable',
-            'config.wx.qr.*.visit_uv' => 'nullable',
-            'config.wx.qr.*.expired_at' => 'nullable|date_format:Y-m-d',
-            'config.wx.switch_type' => ['required', new Enum(SwitchType::class)],
-            'config.wx.uv_limit_type' => ['required', new Enum(UVLimitType::class)],
-        ]) : $res;
+        return parent::update($id);
     }
 
-    // 获取下拉数据源
+    public function status(Request $request, int $id): JsonResponse
+    {
+        $payload = $request->json()->all();
+        if (! is_array($payload) || count($payload) !== 1 || ! array_key_exists('manual_status', $payload) || ! is_bool($payload['manual_status'])) {
+            return response()->json([
+                'code' => 'VALIDATION_ERROR',
+                'message' => 'manual_status 必须是布尔值且请求只能包含该字段',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $link = $this->scopedQuery()->findOrFail($id);
+        $link->forceFill(['manual_status' => $payload['manual_status']])->save();
+
+        return response()->json(['data' => $this->publicLink($link->fresh())]);
+    }
+
+    public function destroy($id): JsonResponse
+    {
+        $link = $this->scopedQuery()->find($id);
+        if (! $link) {
+            // Keep the delete endpoint non-enumerating: foreign and absent
+            // rows share the same idempotent response.
+            return response()->json(null, Response::HTTP_NO_CONTENT);
+        }
+
+        if (LinkTypeParser::parse($link->getRawOriginal('type')) === LinkType::LANDING_MINI) {
+            app(QrRotationService::class)->forget($link);
+        }
+        $link->delete();
+
+        return response()->json(null, Response::HTTP_NO_CONTENT);
+    }
+
     public function link_list(): JsonResponse
     {
-        $list = Link::query()
-            ->where('user_id', auth('api')->user()->id)
-            ->orderByDesc('type')
-            ->orderByDesc('id')
+        $list = Link::query()->where('user_id', auth('api')->id())
+            ->orderByDesc('type')->orderByDesc('id')
             ->get(['id', 'icon', 'title', 'type']);
 
         return $this->success($list);
+    }
+
+    private function scopedQuery()
+    {
+        $user = auth('api')->user();
+
+        return Link::query()->when(! $this->isAdmin($user), fn ($query) => $query->where('user_id', $user->id));
+    }
+
+    /** @return array<string, mixed> */
+    private function publicLink(Link $link): array
+    {
+        $decision = app(LinkAccessPolicy::class)->check($link, CarbonImmutable::now('Asia/Shanghai'));
+        $rawType = $link->getRawOriginal('type');
+        $knownType = LinkTypeParser::parse($rawType) !== null;
+        if ($knownType) {
+            $data = $link->toArray();
+        } else {
+            // Eloquent enum casts throw ValueError for dirty legacy values;
+            // serialize raw, non-secret fields explicitly for this boundary.
+            $data = $link->getAttributes();
+            $data['type'] = LinkTypeParser::normalize($rawType);
+            $data['config'] = is_string($data['config'] ?? null)
+                ? (json_decode($data['config'], true) ?: [])
+                : (is_array($data['config'] ?? null) ? $data['config'] : []);
+        }
+        $data['manual_status'] = (bool) $link->manual_status;
+        $data['health_status'] = (bool) $link->health_status;
+        $data['effective_status'] = $decision->allowed && $knownType;
+        try {
+            $data['share_link'] = app(LinkShareUrl::class)->for($link);
+        } catch (LinkResolutionException $exception) {
+            throw new BusinessRuleException($exception->errorCode, $exception->getMessage(), $exception->status);
+        }
+
+        return $data;
+    }
+
+    private function isAdmin($user): bool
+    {
+        $type = $user?->getAttribute('type');
+
+        return $type === UserType::Admin
+            || ((is_int($type) || is_string($type)) && (int) $type === UserType::Admin->value);
+    }
+
+    /** @return array<string, mixed> */
+    private function getConfigRules(): array
+    {
+        $type = request()->integer('type');
+        $isLanding = $type === LinkType::LANDING_MINI->value;
+        $rules = [
+            'config.domain_id' => ['nullable', Rule::exists('domains', 'id')->where('enable', true)],
+            'config.url' => 'required_unless:type,'.LinkType::LANDING_MINI->value,
+        ];
+
+        if (in_array($type, [LinkType::MINI_PROGRAM->value, LinkType::LANDING_MINI->value], true)) {
+            $rules['config.min_id'] = 'required|integer';
+            $rules['config.url'] = '';
+        }
+        if ($type === LinkType::CLI_QR->value) {
+            $rules['config.url'] = 'required|url|starts_with:https://qr61.cn/';
+        }
+        if ($type === LinkType::QR_QQ->value) {
+            $rules['config.url'] = 'required|url|starts_with:https://ym.link/';
+        }
+        if (! $isLanding) {
+            return $rules;
+        }
+
+        return array_merge($rules, [
+            'config.wx' => ['required', 'array'],
+            'config.wx.avatar' => 'nullable|string',
+            'config.wx.title' => 'nullable|string',
+            'config.wx.sub_title' => 'nullable|string',
+            'config.wx.qr' => ['required', 'array', 'min:1'],
+            'config.wx.qr.*' => ['required', 'array'],
+            'config.wx.qr.*.sort' => ['required', $this->strictIntegerRule(), 'numeric', 'min:0', 'max:200', 'distinct'],
+            'config.wx.qr.*.name' => ['nullable', 'string'],
+            'config.wx.qr.*.path' => ['required', 'string'],
+            'config.wx.qr.*.uv_limit_num' => ['nullable', $this->strictIntegerRule(), 'numeric', 'min:1'],
+            // This is display-only legacy data. Accept it for client
+            // compatibility, then overwrite it to zero in the saving hook.
+            'config.wx.qr.*.visit_uv' => 'nullable',
+            'config.wx.qr.*.expired_at' => 'nullable|date_format:Y-m-d',
+            'config.wx.switch_type' => ['required', $this->strictEnumRule(SwitchType::class)],
+            'config.wx.uv_limit_type' => ['required', $this->strictEnumRule(UVLimitType::class)],
+        ]);
+    }
+
+    private function strictIntegerRule(): Closure
+    {
+        return static function (string $attribute, mixed $value, Closure $fail): void {
+            if (! is_int($value)) {
+                $fail($attribute.' must be an integer.');
+            }
+        };
+    }
+
+    /** @param class-string<\BackedEnum> $enumClass */
+    private function strictEnumRule(string $enumClass): Closure
+    {
+        return static function (string $attribute, mixed $value, Closure $fail) use ($enumClass): void {
+            if (! is_int($value) || $enumClass::tryFrom($value) === null) {
+                $fail($attribute.' must be a valid integer enum value.');
+            }
+        };
     }
 }

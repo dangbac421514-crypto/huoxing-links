@@ -57,6 +57,16 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    // Canonical public share origin. Hosts are normalized by LinkShareUrl
+    // before any URL is emitted.
+    'public_origin' => env('PUBLIC_ORIGIN', ''),
+    'allowed_share_hosts' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('ALLOWED_SHARE_HOSTS', '')),
+    ))),
+    'visitor_hash_key' => env('APP_VISITOR_HASH_KEY'),
+    'visitor_token_key' => env('APP_VISITOR_TOKEN_KEY'),
+
     'asset_url' => env('ASSET_URL'),
 
     /*
@@ -70,7 +80,7 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    'timezone' => env('APP_TIMEZONE', 'Asia/Shanghai'),
 
     /*
     |--------------------------------------------------------------------------
@@ -125,6 +135,8 @@ return [
     'key' => env('APP_KEY'),
 
     'cipher' => 'AES-256-CBC',
+
+    'previous_keys' => array_values(array_filter(explode(',', (string) env('APP_PREVIOUS_KEYS', '')))),
 
     /*
     |--------------------------------------------------------------------------

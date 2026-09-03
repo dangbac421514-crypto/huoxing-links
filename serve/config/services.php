@@ -51,6 +51,10 @@ return [
         'key' => env('ALI_SMS_KEY'),
         'secret' => env('ALI_SMS_SECRET'),
         'sign_name' => env('ALI_SMS_SIGN_NAME'),
-        'test_code' => env('ALI_SMS_TEST_CODE'),
+        'template_code' => env('ALI_SMS_TEMPLATE_CODE'),
+    ],
+
+    'mail' => [
+        'template_code' => env('MAIL_TEMPLATE_CODE'),
     ],
 ];

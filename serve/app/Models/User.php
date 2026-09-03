@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Casts\InstantCast;
+use App\Contracts\ReferralCodeGenerator;
 use App\Enums\UserType;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 use Ugly\Base\Casts\Amount;
 use Ugly\Base\Traits\SearchModel;
@@ -14,11 +16,11 @@ use Ugly\Base\Traits\SerializeDate;
 
 class User extends Authenticatable
 {
-    use HasApiTokens, SearchModel, SerializeDate;
+    use HasApiTokens, HasFactory, SearchModel, SerializeDate;
 
     protected $guarded = [];
 
-    protected $hidden = ['password'];
+    protected $hidden = ['password', 'remember_token', 'tokens'];
 
     protected $casts = [
         'type' => UserType::class,
@@ -26,12 +28,34 @@ class User extends Authenticatable
         'accumulate_credit' => Amount::class.':4',
         'commission' => Amount::class,
         'accumulate_commission' => Amount::class,
+        'start_at' => InstantCast::class,
+        'end_at' => InstantCast::class,
+        'must_change_password' => 'boolean',
     ];
 
     protected static function booted(): void
     {
+        // Production account creation goes through UserAccountCreator; keep this
+        // fallback for legacy and direct model creates outside those flows.
         self::creating(function (User $user) {
-            $user->referral_code = Str::random(8);
+            if ($user->referral_code !== null && $user->referral_code !== '') {
+                return;
+            }
+
+            $generator = app(ReferralCodeGenerator::class);
+            do {
+                $code = $generator->generate();
+            } while (self::query()->where('referral_code', $code)->exists());
+
+            $user->referral_code = $code;
+        });
+
+        self::updating(function (User $user): void {
+            foreach (['parent_id', 'referral_code'] as $attribute) {
+                if ($user->isDirty($attribute)) {
+                    $user->setAttribute($attribute, $user->getOriginal($attribute));
+                }
+            }
         });
     }
 
