@@ -34,7 +34,7 @@ class MainActivityTest {
     fun installTestGraph() {
         store = FakePrivacyStore(false)
         initializer = RecordingInitializer()
-        AppGraph.testFactory = { context ->
+        MainActivity.testGraphFactory = { context ->
             AppGraph.forTesting(
                 card = ApprovedShareCard.create(
                     "https://link.bjaajsdad.xyz/douyin/jifeng-assistant",
@@ -51,7 +51,7 @@ class MainActivityTest {
 
     @After
     fun removeTestGraph() {
-        AppGraph.testFactory = null
+        MainActivity.testGraphFactory = null
         androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
             .getSharedPreferences("jifeng_privacy_v1", android.content.Context.MODE_PRIVATE)
             .edit()
@@ -133,7 +133,7 @@ class MainActivityTest {
             .commit()
 
         ActivityScenario.launch(MainActivity::class.java).use {
-            assertEquals("test graph must bypass production initializer", 0, initializer.initializeCalls)
+            assertEquals("test graph must bypass production initializer", 0, JifengTestStartupState.initializeCalls)
         }
     }
 

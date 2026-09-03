@@ -1,4 +1,6 @@
 import java.io.File
+import java.io.InputStreamReader
+import java.nio.charset.StandardCharsets
 import java.util.Properties
 
 plugins {
@@ -9,7 +11,9 @@ plugins {
 val localProperties = Properties().also { properties ->
     val localPropertiesFile = rootProject.file("local.properties")
     if (localPropertiesFile.isFile) {
-        localPropertiesFile.inputStream().use { properties.load(it) }
+        InputStreamReader(localPropertiesFile.inputStream(), StandardCharsets.UTF_8).use {
+            properties.load(it)
+        }
     }
 }
 
@@ -37,7 +41,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.jixingwangluo.jifengassistant.JifengTestRunner"
         buildConfigField("String", "DOUYIN_CLIENT_KEY", buildConfigString(localProperties.getProperty("DOUYIN_CLIENT_KEY", "")))
         buildConfigField("String", "DOUYIN_APPROVED_SHARE_URL", buildConfigString(localProperties.getProperty("DOUYIN_APPROVED_SHARE_URL", "")))
         buildConfigField("String", "DOUYIN_CARD_TITLE", buildConfigString(localProperties.getProperty("DOUYIN_CARD_TITLE", "")))

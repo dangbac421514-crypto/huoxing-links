@@ -2,7 +2,7 @@ package com.jixingwangluo.jifengassistant
 
 import android.app.Application
 
-class JifengApplication : Application() {
+open class JifengApplication : Application() {
     lateinit var appGraph: AppGraph
         private set
 

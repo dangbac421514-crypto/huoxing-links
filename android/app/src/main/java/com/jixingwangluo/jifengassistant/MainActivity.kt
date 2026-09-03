@@ -1,6 +1,7 @@
 package com.jixingwangluo.jifengassistant
 
 import android.content.Intent
+import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import androidx.appcompat.app.AlertDialog
@@ -18,7 +19,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        graph = (application as JifengApplication).appGraph
+        graph = testGraphFactory?.invoke(applicationContext)
+            ?: (application as JifengApplication).appGraph
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         renderCard()
@@ -135,6 +137,12 @@ class MainActivity : AppCompatActivity() {
         } else {
             binding.statusText.text = getString(R.string.ready_status)
         }
+    }
+
+    companion object {
+        /** Instrumentation-only activity graph override; null in production. */
+        @JvmField
+        var testGraphFactory: ((Context) -> AppGraph)? = null
     }
 
 }
