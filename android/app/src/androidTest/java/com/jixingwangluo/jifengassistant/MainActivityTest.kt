@@ -8,6 +8,7 @@ import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.isEnabled
 import androidx.test.espresso.matcher.ViewMatchers.withId
+import androidx.test.espresso.matcher.ViewMatchers.withClassName
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import com.jixingwangluo.jifengassistant.douyin.ContactShareClient
 import com.jixingwangluo.jifengassistant.douyin.DouyinShareGateway
@@ -15,10 +16,14 @@ import com.jixingwangluo.jifengassistant.douyin.InMemoryPendingShareStore
 import com.jixingwangluo.jifengassistant.model.ApprovedShareCard
 import com.jixingwangluo.jifengassistant.privacy.PrivacyConsentStore
 import org.hamcrest.CoreMatchers.not
+import org.hamcrest.CoreMatchers.`is`
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 
 @RunWith(AndroidJUnit4::class)
 class MainActivityTest {
@@ -29,7 +34,7 @@ class MainActivityTest {
     fun installTestGraph() {
         store = FakePrivacyStore(false)
         initializer = RecordingInitializer()
-        MainActivity.testGraphFactory = { context ->
+        AppGraph.testFactory = { context ->
             AppGraph.forTesting(
                 card = ApprovedShareCard.create(
                     "https://link.bjaajsdad.xyz/douyin/jifeng-assistant",
@@ -46,7 +51,12 @@ class MainActivityTest {
 
     @After
     fun removeTestGraph() {
-        MainActivity.testGraphFactory = null
+        AppGraph.testFactory = null
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+            .getSharedPreferences("jifeng_privacy_v1", android.content.Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .commit()
     }
 
     @Test
@@ -62,6 +72,8 @@ class MainActivityTest {
             onView(withId(R.id.approved_domain)).check(matches(withText("link.bjaajsdad.xyz")))
             onView(withId(R.id.share_button)).check(matches(isDisplayed()))
             onView(withId(R.id.share_button)).check(matches(not(isEnabled())))
+            onView(withId(R.id.status_text)).check(matches(isDisplayed()))
+            onView(withClassName(`is`("android.widget.EditText"))).check(doesNotExist())
             listOf(
                 "\u6ce8\u518c",
                 "\u767b\u5f55",
@@ -78,9 +90,50 @@ class MainActivityTest {
     fun acceptingPrivacyPersistsAndInitializesExactlyOnce() {
         ActivityScenario.launch(MainActivity::class.java).use {
             onView(withText("同意并继续")).perform(androidx.test.espresso.action.ViewActions.click())
-            assert(store.accepted)
-            assert(initializer.acceptedCalls == 1)
+            assertTrue("privacy consent must be persisted", store.accepted)
+            assertEquals("privacy acceptance must initialize exactly once", 1, initializer.acceptedCalls)
             onView(withId(R.id.share_button)).check(matches(isEnabled()))
+        }
+    }
+
+    @Test
+    fun callbackExtrasAreConsumedWhenCardIsUnavailable() {
+        AppGraph.testFactory = {
+            AppGraph.forTesting(
+                card = null,
+                privacyConsentStore = store,
+                initializer = initializer,
+                gateway = DouyinShareGateway(FakeClient(), InMemoryPendingShareStore()),
+            )
+        }
+        val callbackIntent = android.content.Intent(
+            androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext,
+            MainActivity::class.java,
+        ).apply {
+            putExtra(com.jixingwangluo.jifengassistant.douyin.DouYinEntryActivity.EXTRA_RESULT_TYPE, "CANCELLED")
+            putExtra(com.jixingwangluo.jifengassistant.douyin.DouYinEntryActivity.EXTRA_ERROR_CODE, 20004)
+            putExtra(com.jixingwangluo.jifengassistant.douyin.DouYinEntryActivity.EXTRA_ERROR_MESSAGE, "ignored")
+        }
+
+        ActivityScenario.launch<MainActivity>(callbackIntent).use { scenario ->
+            scenario.onActivity { activity ->
+                assertFalse(activity.intent.hasExtra(com.jixingwangluo.jifengassistant.douyin.DouYinEntryActivity.EXTRA_RESULT_TYPE))
+                assertFalse(activity.intent.hasExtra(com.jixingwangluo.jifengassistant.douyin.DouYinEntryActivity.EXTRA_ERROR_CODE))
+                assertFalse(activity.intent.hasExtra(com.jixingwangluo.jifengassistant.douyin.DouYinEntryActivity.EXTRA_ERROR_MESSAGE))
+            }
+        }
+    }
+
+    @Test
+    fun testGraphPreventsProductionSdkInitializationWithStoredConsent() {
+        val targetContext = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        targetContext.getSharedPreferences("jifeng_privacy_v1", android.content.Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("privacy_accepted_v1", true)
+            .commit()
+
+        ActivityScenario.launch(MainActivity::class.java).use {
+            assertEquals("test graph must bypass production initializer", 0, initializer.initializeCalls)
         }
     }
 
@@ -96,8 +149,11 @@ class MainActivityTest {
 
     private class RecordingInitializer : PrivacyInitializer {
         var acceptedCalls = 0
+        var initializeCalls = 0
 
-        override fun initialize() = Unit
+        override fun initialize() {
+            initializeCalls += 1
+        }
 
         override fun onPrivacyAccepted() {
             acceptedCalls += 1

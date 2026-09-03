@@ -27,6 +27,10 @@ class AppGraph(
     fun createShareGateway(activity: Activity): DouyinShareGateway = gatewayFactory(activity)
 
     companion object {
+        /** Instrumentation-only override; null in every production process. */
+        @JvmField
+        var testFactory: ((Context) -> AppGraph)? = null
+
         fun production(context: Context): AppGraph {
             val cardResult = runCatching {
                 ApprovedShareCard.create(
@@ -59,7 +63,7 @@ class AppGraph(
         }
 
         fun forTesting(
-            card: ApprovedShareCard,
+            card: ApprovedShareCard?,
             privacyConsentStore: PrivacyConsentStore,
             initializer: PrivacyInitializer,
             gateway: DouyinShareGateway,

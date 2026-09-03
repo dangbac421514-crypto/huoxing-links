@@ -1,6 +1,5 @@
 package com.jixingwangluo.jifengassistant
 
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -19,8 +18,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        graph = testGraphFactory?.invoke(applicationContext)
-            ?: (application as JifengApplication).appGraph
+        graph = (application as JifengApplication).appGraph
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         renderCard()
@@ -102,21 +100,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleCallbackIntent(intent: Intent?) {
-        val model = viewModel ?: return
-        if (intent == null || !intent.hasExtra(com.jixingwangluo.jifengassistant.douyin.DouYinEntryActivity.EXTRA_RESULT_TYPE)) {
+        if (intent == null) {
             return
         }
-        val type = intent.getStringExtra(com.jixingwangluo.jifengassistant.douyin.DouYinEntryActivity.EXTRA_RESULT_TYPE)
+        val resultExtra = com.jixingwangluo.jifengassistant.douyin.DouYinEntryActivity.EXTRA_RESULT_TYPE
+        val errorCodeExtra = com.jixingwangluo.jifengassistant.douyin.DouYinEntryActivity.EXTRA_ERROR_CODE
+        val errorMessageExtra = com.jixingwangluo.jifengassistant.douyin.DouYinEntryActivity.EXTRA_ERROR_MESSAGE
+        val hasResult = intent.hasExtra(resultExtra)
+        val type = intent.getStringExtra(resultExtra)
         val code = if (intent.hasExtra(com.jixingwangluo.jifengassistant.douyin.DouYinEntryActivity.EXTRA_ERROR_CODE)) {
             intent.getIntExtra(com.jixingwangluo.jifengassistant.douyin.DouYinEntryActivity.EXTRA_ERROR_CODE, 0)
         } else {
             null
         }
-        val message = intent.getStringExtra(com.jixingwangluo.jifengassistant.douyin.DouYinEntryActivity.EXTRA_ERROR_MESSAGE)
+        val message = intent.getStringExtra(errorMessageExtra)
+        intent.removeExtra(resultExtra)
+        intent.removeExtra(errorCodeExtra)
+        intent.removeExtra(errorMessageExtra)
+        val model = viewModel ?: return
+        if (!hasResult) return
         model.onCallback(type, code, message)
-        intent.removeExtra(com.jixingwangluo.jifengassistant.douyin.DouYinEntryActivity.EXTRA_RESULT_TYPE)
-        intent.removeExtra(com.jixingwangluo.jifengassistant.douyin.DouYinEntryActivity.EXTRA_ERROR_CODE)
-        intent.removeExtra(com.jixingwangluo.jifengassistant.douyin.DouYinEntryActivity.EXTRA_ERROR_MESSAGE)
         renderState(model.state.value)
     }
 
@@ -134,8 +137,4 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    companion object {
-        @JvmField
-        var testGraphFactory: ((Context) -> AppGraph)? = null
-    }
 }
