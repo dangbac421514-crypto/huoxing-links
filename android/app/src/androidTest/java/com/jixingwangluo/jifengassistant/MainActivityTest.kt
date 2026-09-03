@@ -52,6 +52,9 @@ class MainActivityTest {
     @After
     fun removeTestGraph() {
         MainActivity.testGraphFactory = null
+        JifengTestStartupGraph.install(
+            androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext,
+        )
         androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
             .getSharedPreferences("jifeng_privacy_v1", android.content.Context.MODE_PRIVATE)
             .edit()
@@ -98,7 +101,7 @@ class MainActivityTest {
 
     @Test
     fun callbackExtrasAreConsumedWhenCardIsUnavailable() {
-        AppGraph.testFactory = {
+        MainActivity.testGraphFactory = {
             AppGraph.forTesting(
                 card = null,
                 privacyConsentStore = store,

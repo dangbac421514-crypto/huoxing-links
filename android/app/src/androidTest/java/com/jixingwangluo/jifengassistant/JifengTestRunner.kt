@@ -13,6 +13,19 @@ object JifengTestStartupState {
     var initializeCalls: Int = 0
 }
 
+object JifengTestStartupGraph {
+    fun install(@Suppress("UNUSED_PARAMETER") context: Context) {
+        AppGraph.testFactory = {
+            AppGraph.forTesting(
+                card = null,
+                privacyConsentStore = NoConsentStore,
+                initializer = StartupInitializer,
+                gateway = DouyinShareGateway(NoContactShareClient, InMemoryPendingShareStore()),
+            )
+        }
+    }
+}
+
 class JifengTestRunner : AndroidJUnitRunner() {
     override fun newApplication(
         cl: ClassLoader,
@@ -23,14 +36,7 @@ class JifengTestRunner : AndroidJUnitRunner() {
 
 class JifengTestApplication : JifengApplication() {
     override fun onCreate() {
-        AppGraph.testFactory = { context ->
-            AppGraph.forTesting(
-                card = null,
-                privacyConsentStore = NoConsentStore,
-                initializer = StartupInitializer,
-                gateway = DouyinShareGateway(NoContactShareClient, InMemoryPendingShareStore()),
-            )
-        }
+        JifengTestStartupGraph.install(this)
         super.onCreate()
     }
 }
