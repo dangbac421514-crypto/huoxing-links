@@ -7,6 +7,7 @@ class ShareResultMapperTest {
     @Test
     fun mapsSuccessfulAndCancelledCallbacks() {
         assertEquals(ShareResult.Success, ShareResultMapper.from(20000, false, null))
+        assertEquals(ShareResult.Cancelled, ShareResultMapper.from(20000, true, "cancelled"))
         assertEquals(ShareResult.Cancelled, ShareResultMapper.from(20004, false, "cancelled"))
         assertEquals(ShareResult.Cancelled, ShareResultMapper.from(20013, true, "user cancelled"))
     }

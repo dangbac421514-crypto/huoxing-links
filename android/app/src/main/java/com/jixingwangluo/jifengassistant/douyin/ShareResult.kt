@@ -13,8 +13,8 @@ object ShareResultMapper {
     fun from(errorCode: Int, isCancel: Boolean, errorMessage: String?): ShareResult {
         val message = sanitize(errorMessage)
         return when {
-            errorCode == 20000 -> ShareResult.Success
             isCancel || errorCode == 20004 || errorCode == 20013 -> ShareResult.Cancelled
+            errorCode == 20000 -> ShareResult.Success
             errorCode == 20003 -> ShareResult.PermissionOrPackageMismatch(errorCode, message)
             errorCode == 20006 -> ShareResult.NetworkError(errorCode, message)
             errorCode == 20017 -> ShareResult.UrlNotApproved(errorCode, message)

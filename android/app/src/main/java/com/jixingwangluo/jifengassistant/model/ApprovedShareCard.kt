@@ -1,34 +1,35 @@
 package com.jixingwangluo.jifengassistant.model
 
 import java.net.URI
+import java.net.URISyntaxException
 
-data class ApprovedShareCard private constructor(
+class ApprovedShareCard(
     val url: String,
     val title: String,
     val description: String,
-    val thumbUrl: String?,
+    thumbUrl: String?,
 ) {
+    val thumbUrl: String? = thumbUrl?.takeIf { it.isNotBlank() }
+
+    init {
+        validateUrl(url, "url")
+        require(title.isNotBlank()) { "title must not be blank" }
+        require(description.isNotBlank()) { "description must not be blank" }
+        this.thumbUrl?.let { validateUrl(it, "thumbUrl") }
+    }
+
     companion object {
         fun create(
             url: String,
             title: String,
             description: String,
             thumbUrl: String?,
-        ): ApprovedShareCard {
-            validateUrl(url, "url")
-            require(title.isNotBlank()) { "title must not be blank" }
-            require(description.isNotBlank()) { "description must not be blank" }
-
-            val normalizedThumbUrl = thumbUrl?.takeIf { it.isNotBlank() }
-            normalizedThumbUrl?.let { validateUrl(it, "thumbUrl") }
-
-            return ApprovedShareCard(url, title, description, normalizedThumbUrl)
-        }
+        ): ApprovedShareCard = ApprovedShareCard(url, title, description, thumbUrl)
 
         private fun validateUrl(value: String, field: String) {
             val uri = try {
                 URI(value)
-            } catch (exception: Exception) {
+            } catch (exception: URISyntaxException) {
                 throw IllegalArgumentException("$field must be a valid URI", exception)
             }
 
