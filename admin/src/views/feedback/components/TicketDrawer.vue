@@ -65,6 +65,8 @@ const loadDetail = (id: number) => {
   requestedId.value = id
   detail.value = null
   note.value = ''
+  actionLoading.value = false
+  noteSubmitting.value = false
   detailLoading.value = true
   ApiFeedbackTicketDetail(id)
     .then((payload) => {
