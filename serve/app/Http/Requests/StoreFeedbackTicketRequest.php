@@ -9,7 +9,9 @@ use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\File;
 use Symfony\Component\HttpFoundation\Response;
 
 class StoreFeedbackTicketRequest extends FormRequest
@@ -34,6 +36,31 @@ class StoreFeedbackTicketRequest extends FormRequest
         return $this->resolvedChannel;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->files->set('attachments', $this->attachmentFiles());
+    }
+
+    /**
+     * @return list<UploadedFile>
+     */
+    public function attachmentFiles(): array
+    {
+        $files = $this->file('attachments', []);
+        if ($files instanceof UploadedFile) {
+            $files = [$files];
+        }
+
+        $present = [];
+        foreach (is_array($files) ? $files : [] as $file) {
+            if ($file instanceof UploadedFile && $file->isValid()) {
+                $present[] = $file;
+            }
+        }
+
+        return $present;
+    }
+
     /**
      * @return array<string, ValidationRule|array<mixed>|string>
      */
@@ -50,6 +77,12 @@ class StoreFeedbackTicketRequest extends FormRequest
             'contact' => $contact,
             'idempotency_key' => ['required', 'uuid'],
             'privacy_accepted' => ['required', 'accepted'],
+            'attachments' => ['nullable', 'array', 'max:3'],
+            'attachments.*' => [
+                'file',
+                File::image(false)->types(['jpg', 'jpeg', 'png', 'webp'])->max('5mb')
+                    ->dimensions(Rule::dimensions()->maxWidth(6000)->maxHeight(6000)),
+            ],
             'user_id' => ['prohibited'],
             'status' => ['prohibited'],
             'public_no' => ['prohibited'],

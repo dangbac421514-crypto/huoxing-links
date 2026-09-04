@@ -10,8 +10,10 @@ use App\Models\FeedbackEvent;
 use App\Models\FeedbackTicket;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Throwable;
 
 final class FeedbackSubmissionService
 {
@@ -25,6 +27,8 @@ final class FeedbackSubmissionService
 
     private const PUBLIC_NO_INDEX = 'feedback_tickets_public_no_unique';
 
+    public function __construct(private readonly FeedbackAttachmentService $attachments) {}
+
     public function submit(FeedbackChannel $channel, FeedbackSubmissionData $data): FeedbackSubmissionResult
     {
         $existing = $this->findByIdempotency($channel, $data->idempotencyKey);
@@ -32,14 +36,18 @@ final class FeedbackSubmissionService
             return new FeedbackSubmissionResult($existing, false);
         }
 
+        $tracked = [];
         try {
-            return DB::transaction(function () use ($channel, $data): FeedbackSubmissionResult {
+            return DB::transaction(function () use ($channel, $data, &$tracked): FeedbackSubmissionResult {
                 $ticket = $this->createTicket($channel, $data);
                 $this->writeSubmittedEvent($ticket);
+                $stored = $this->attachments->storeForTicket($ticket, $this->attachmentFiles($data));
+                $tracked = $stored->pluck('path')->all();
 
                 return new FeedbackSubmissionResult($ticket, true);
             });
         } catch (QueryException $exception) {
+            $this->attachments->deleteStored($tracked);
             if (! $this->isDuplicateKey($exception, self::IDEMPOTENCY_INDEX)) {
                 throw $exception;
             }
@@ -50,7 +58,34 @@ final class FeedbackSubmissionService
             }
 
             return new FeedbackSubmissionResult($existing, false);
+        } catch (Throwable $exception) {
+            $this->attachments->deleteStored($tracked);
+            throw $exception;
         }
+    }
+
+    /**
+     * @return list<UploadedFile>
+     */
+    private function attachmentFiles(FeedbackSubmissionData $data): array
+    {
+        $files = array_values(array_filter(
+            $data->attachments,
+            static fn (mixed $file): bool => $file instanceof UploadedFile && $file->isValid(),
+        ));
+        if ($files !== []) {
+            return $files;
+        }
+
+        $fromRequest = request()->file('attachments', []);
+        if ($fromRequest instanceof UploadedFile) {
+            $fromRequest = [$fromRequest];
+        }
+
+        return array_values(array_filter(
+            is_array($fromRequest) ? $fromRequest : [],
+            static fn (mixed $file): bool => $file instanceof UploadedFile && $file->isValid(),
+        ));
     }
 
     private function createTicket(FeedbackChannel $channel, FeedbackSubmissionData $data): FeedbackTicket

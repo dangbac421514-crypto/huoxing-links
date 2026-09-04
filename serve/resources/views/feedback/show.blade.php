@@ -98,7 +98,7 @@
                 <label for="contact">联系方式 <span class="hint">{{ $channel->contact_required ? '必填' : '选填' }}</span></label>
                 <input id="contact" name="contact" type="text" maxlength="80" @if ($channel->contact_required) required @endif>
 
-                <p class="label">图片凭证 <span class="hint">最多 3 张，JPEG/PNG/WebP</span></p>
+                <p class="label">图片凭证 <span class="hint">最多 3 张，JPEG/PNG/WebP，每张不超过 5 MiB</span></p>
                 <input type="file" name="attachments[]" accept="image/jpeg,image/png,image/webp">
                 <input type="file" name="attachments[]" accept="image/jpeg,image/png,image/webp">
                 <input type="file" name="attachments[]" accept="image/jpeg,image/png,image/webp">
@@ -128,6 +128,18 @@
                 }
                 button.disabled = true;
                 var data = new FormData(form);
+                data.delete('attachments[]');
+                var fileInputs = form.querySelectorAll('input[type="file"]');
+                var attached = 0;
+                for (var i = 0; i < fileInputs.length; i++) {
+                    if (attached >= 3) {
+                        break;
+                    }
+                    if (fileInputs[i].files && fileInputs[i].files.length) {
+                        data.append('attachments[]', fileInputs[i].files[0]);
+                        attached++;
+                    }
+                }
                 data.set('idempotency_key', idempotencyKey);
                 fetch(form.getAttribute('action'), {
                     method: 'POST',

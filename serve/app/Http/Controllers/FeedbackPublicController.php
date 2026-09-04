@@ -45,6 +45,7 @@ final class FeedbackPublicController extends Controller
                 $validated['contact'] ?? null,
                 $validated['idempotency_key'],
                 $identity->hash,
+                $request->attachmentFiles(),
             ),
         );
 
