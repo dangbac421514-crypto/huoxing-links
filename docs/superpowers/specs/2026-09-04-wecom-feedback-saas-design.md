@@ -1,7 +1,7 @@
 # 企业微信客诉受理 SaaS 接入设计
 
 日期：2026-09-04
-状态：聊天方案已获用户批准，待书面复核
+状态：书面设计已获用户批准，进入实施计划
 代码基线：`codex/full-function-implementation@c8c064926af7d5d32c958306ca3f2be68a4021c1`
 任务分支：`codex/wecom-feedback-saas`
 
@@ -30,7 +30,7 @@
 
 ### 3.1 首版纳入
 
-- 多租户客诉渠道 CRUD、启停和固定分享地址。
+- 多租户客诉渠道创建、读取、编辑、停用和固定分享地址；首版不物理删除渠道。
 - 结构化品牌配置：运营主体、页面标题、简介、客服电话、处理时效说明。
 - 默认问题分类：售前承诺、订单履约、退款售后、服务态度、产品问题、其他；租户可改名称和顺序，但不能注入 HTML/JavaScript。
 - 客户提交、幂等、防刷、附件上传、隐私确认和提交结果页。
@@ -118,7 +118,7 @@
 #### `feedback_attachments`
 
 - `id`, `user_id`, `feedback_ticket_id`
-- `disk`, `path`, `original_name`, `mime`, `size`, `sha256`
+- `disk`, `path`, `original_name`（encrypted cast）, `mime`, `size`, `sha256`
 - timestamps
 
 附件保存到私有磁盘。下载接口先做租户授权，再以流式响应返回；数据库路径不得直接拼接到公共 URL。
@@ -131,7 +131,8 @@
 
 #### `feedback_deliveries`
 
-- `feedback_ticket_id`, `user_id`, `channel`, `status`
+- `feedback_channel_id`, `feedback_ticket_id`（测试通知时可空）, `user_id`
+- `kind`（`ticket` / `test`）, `channel`, `status`
 - `attempts`, `next_attempt_at`, `last_error_code`, `sent_at`
 - 唯一 `idempotency_key`
 
@@ -153,7 +154,7 @@
 - `POST /api/feedback-tickets/{id}/notes`
 - `GET /api/feedback-attachments/{id}/download`
 
-所有资源由后端策略校验 `user_id`；管理员跨租户访问必须经过管理员中间件并写审计事件。Webhook 更新为 write-only：详情仅返回 `webhook_configured: true|false`。
+所有普通资源接口（包括管理员调用）都只返回当前登录账号自己的 `user_id` 数据。首版不提供跨租户接口；未来如增加管理员跨租户访问，必须独立经过管理员中间件并写审计事件。Webhook 更新为 write-only：详情仅返回 `webhook_configured: true|false`。
 
 ### 7.2 公开接口
 
