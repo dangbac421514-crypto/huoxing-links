@@ -24,6 +24,7 @@ const pageSizes = [10, 20, 30, 40, 50]
 const formVisible = ref(false)
 const formLoading = ref(false)
 const detailData = ref<FeedbackChannel | null>(null)
+const editingId = ref<number | null>(null)
 
 const loadList = () => {
   listLoading.value = true
@@ -37,9 +38,22 @@ const loadList = () => {
     })
 }
 
+const isBoundDetail = (id: number) => {
+  return editingId.value === id && detailData.value?.id === id
+}
+
+const closeForm = () => {
+  formVisible.value = false
+  editingId.value = null
+  detailData.value = null
+  formLoading.value = false
+}
+
 const reloadSaved = (id: number) => {
   return ApiFeedbackChannelDetail(id).then((detail) => {
-    detailData.value = detail
+    if (formVisible.value && editingId.value === id) {
+      detailData.value = detail
+    }
     loadList()
     return detail
   })
@@ -66,39 +80,64 @@ const buildPayload = (data: FeedbackChannelForm, mode: 'save' | 'clear'): Feedba
 }
 
 const showCreate = () => {
+  editingId.value = null
   detailData.value = null
+  formLoading.value = false
   formVisible.value = true
 }
 
 const showEdit = (row: FeedbackChannel) => {
+  const targetId = row.id
+  editingId.value = targetId
+  formVisible.value = false
+  detailData.value = null
   formLoading.value = true
-  formVisible.value = true
-  ApiFeedbackChannelDetail(row.id)
+  ApiFeedbackChannelDetail(targetId)
     .then((detail) => {
+      if (editingId.value !== targetId) {
+        return
+      }
       detailData.value = detail
+      formVisible.value = true
     })
     .finally(() => {
-      formLoading.value = false
+      if (editingId.value === targetId) {
+        formLoading.value = false
+      }
     })
 }
 
 const submitChannel = (data: FeedbackChannelForm, detail?: FeedbackChannel | null) => {
+  if (formLoading.value) {
+    return
+  }
+  const targetId = editingId.value
+  if (targetId !== null) {
+    if (!detail?.id || detail.id !== targetId || !isBoundDetail(targetId)) {
+      return
+    }
+  } else if (detail?.id) {
+    return
+  }
   formLoading.value = true
   const payload = buildPayload(data, 'save')
-  const request = detail?.id ? ApiUpdateFeedbackChannel(detail.id, payload) : ApiCreateFeedbackChannel(payload)
+  const request = targetId !== null ? ApiUpdateFeedbackChannel(targetId, payload) : ApiCreateFeedbackChannel(payload)
   request
     .then((saved) => reloadSaved(saved.id))
     .then(() => {
       ElMessage.success('保存成功')
-      formVisible.value = false
+      closeForm()
     })
     .finally(() => {
-      formLoading.value = false
+      if (formVisible.value && (targetId === null || editingId.value === targetId)) {
+        formLoading.value = false
+      }
     })
 }
 
 const clearWebhook = (data: FeedbackChannelForm) => {
-  if (!detailData.value?.id) {
+  const targetId = editingId.value
+  if (formLoading.value || targetId === null || !isBoundDetail(targetId)) {
     return
   }
   ElMessageBox.confirm('确定清除已保存的企业微信机器人？清除后需重新填写才能发送通知。', '清除机器人', {
@@ -106,14 +145,19 @@ const clearWebhook = (data: FeedbackChannelForm) => {
     cancelButtonText: '取消',
     type: 'warning'
   }).then(() => {
+    if (formLoading.value || editingId.value !== targetId || !isBoundDetail(targetId)) {
+      return
+    }
     formLoading.value = true
-    ApiUpdateFeedbackChannel(detailData.value!.id, buildPayload(data, 'clear'))
+    ApiUpdateFeedbackChannel(targetId, buildPayload(data, 'clear'))
       .then((saved) => reloadSaved(saved.id))
       .then(() => {
         ElMessage.success('已清除机器人')
       })
       .finally(() => {
-        formLoading.value = false
+        if (editingId.value === targetId) {
+          formLoading.value = false
+        }
       })
   })
 }

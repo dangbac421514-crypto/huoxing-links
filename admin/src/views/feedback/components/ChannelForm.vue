@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus'
-import { inject, onMounted, ref, type Ref } from 'vue'
+import { inject, onMounted, ref, unref, type Ref } from 'vue'
 import { ApiDomainEnableList } from '@/api/domain'
 import useForm from '@/hooks/form'
 import type { FeedbackChannel, FeedbackChannelForm } from '@/models/feedback'
@@ -121,6 +121,9 @@ const removeCategory = (index: number) => {
 }
 
 const clearWebhook = () => {
+  if (unref(formLoading)) {
+    return
+  }
   formRef.value
     ?.validate()
     .then(() => {
@@ -230,6 +233,7 @@ onMounted(async () => {
             v-if="detail?.id && detail.webhook_configured"
             type="danger"
             link
+            :disabled="Boolean(formLoading)"
             @click="clearWebhook"
           >
             清除机器人
