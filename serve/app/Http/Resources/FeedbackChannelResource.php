@@ -35,6 +35,7 @@ class FeedbackChannelResource extends JsonResource
             'share_url' => $shareUrl,
             'domain_available' => $shareUrl !== null,
             'webhook_configured' => filled($this->resource->webhook_url),
+            'webhook_configured_at' => $this->webhook_configured_at,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

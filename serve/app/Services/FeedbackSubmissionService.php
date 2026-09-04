@@ -27,7 +27,10 @@ final class FeedbackSubmissionService
 
     private const PUBLIC_NO_INDEX = 'feedback_tickets_public_no_unique';
 
-    public function __construct(private readonly FeedbackAttachmentService $attachments) {}
+    public function __construct(
+        private readonly FeedbackAttachmentService $attachments,
+        private readonly FeedbackDeliveryService $deliveries,
+    ) {}
 
     public function submit(FeedbackChannel $channel, FeedbackSubmissionData $data): FeedbackSubmissionResult
     {
@@ -43,6 +46,7 @@ final class FeedbackSubmissionService
                 $this->writeSubmittedEvent($ticket);
                 $stored = $this->attachments->storeForTicket($ticket, $this->attachmentFiles($data));
                 $tracked = $stored->pluck('path')->all();
+                $this->deliveries->queueTicket($ticket);
 
                 return new FeedbackSubmissionResult($ticket, true);
             });

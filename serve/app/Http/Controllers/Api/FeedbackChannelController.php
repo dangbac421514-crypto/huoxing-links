@@ -8,6 +8,7 @@ use App\Http\Requests\UpdateFeedbackChannelRequest;
 use App\Http\Resources\FeedbackChannelResource;
 use App\Models\FeedbackChannel;
 use App\Services\FeedbackChannelService;
+use App\Services\FeedbackDeliveryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -17,7 +18,10 @@ class FeedbackChannelController extends Controller
 {
     use ApiResource;
 
-    public function __construct(private readonly FeedbackChannelService $channels) {}
+    public function __construct(
+        private readonly FeedbackChannelService $channels,
+        private readonly FeedbackDeliveryService $deliveries,
+    ) {}
 
     public function index(): JsonResponse
     {
@@ -65,6 +69,17 @@ class FeedbackChannelController extends Controller
         $channel = $this->channels->setStatus($channel, $payload['status']);
 
         return $this->success($this->toPublicArray($channel));
+    }
+
+    public function testNotification(int $id): JsonResponse
+    {
+        $channel = $this->ownedQuery()->findOrFail($id);
+        $delivery = $this->deliveries->queueTest($channel);
+
+        return $this->success([
+            'kind' => $delivery->kind->value,
+            'status' => $delivery->status->value,
+        ]);
     }
 
     private function ownedQuery()

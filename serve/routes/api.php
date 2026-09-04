@@ -64,6 +64,7 @@ Route::middleware(ApiAuth::class)->group(function (Router $router) {
     $router->patch('/feedback-channels/{id}/status', [FeedbackChannelController::class, 'setStatus']);
     $router->get('/feedback-channels/{id}', [FeedbackChannelController::class, 'show']);
     $router->put('/feedback-channels/{id}', [FeedbackChannelController::class, 'update']);
+    $router->post('/feedback-channels/{id}/test-notification', [FeedbackChannelController::class, 'testNotification']);
 
     $router->get('/agent-invite', [UserController::class, 'invite']); // 邀请记录
 

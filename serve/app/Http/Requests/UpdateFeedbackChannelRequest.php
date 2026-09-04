@@ -37,6 +37,7 @@ class UpdateFeedbackChannelRequest extends FormRequest
             'categories.*' => ['required', 'string', 'max:20', 'distinct'],
             'contact_required' => ['required', 'boolean'],
             'retention_days' => ['required', 'integer', 'min:30', 'max:365'],
+            'webhook_url' => ['sometimes', 'nullable', 'string', 'max:2048'],
         ];
     }
 }

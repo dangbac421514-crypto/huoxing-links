@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use App\Exceptions\BusinessRuleException;
 use App\Models\FeedbackChannel;
 use App\Models\User;
+use App\Support\FeedbackError;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Str;
 
@@ -26,13 +28,16 @@ final class FeedbackChannelService
         'retention_days',
     ];
 
-    public function __construct(private readonly EntitlementService $entitlements) {}
+    public function __construct(
+        private readonly EntitlementService $entitlements,
+        private readonly WeComWebhookPolicy $webhooks,
+    ) {}
 
     /** @param array<string, mixed> $payload */
     public function create(User $actor, array $payload): FeedbackChannel
     {
         $this->entitlements->assertActive($actor);
-        $attributes = $this->publicAttributes($payload);
+        $attributes = array_merge($this->publicAttributes($payload), $this->webhookAttributes($payload));
         $attributes['user_id'] = $actor->id;
         $attributes['status'] = true;
 
@@ -53,7 +58,7 @@ final class FeedbackChannelService
     /** @param array<string, mixed> $payload */
     public function update(FeedbackChannel $channel, array $payload): FeedbackChannel
     {
-        $channel->fill($this->publicAttributes($payload))->save();
+        $channel->fill(array_merge($this->publicAttributes($payload), $this->webhookAttributes($payload)))->save();
 
         return $channel->fresh(['domain']);
     }
@@ -84,6 +89,33 @@ final class FeedbackChannelService
         }
 
         return $attributes;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function webhookAttributes(array $payload): array
+    {
+        if (! array_key_exists('webhook_url', $payload)) {
+            return [];
+        }
+
+        $url = $payload['webhook_url'];
+        if ($url === null) {
+            return [
+                'webhook_url' => null,
+                'webhook_configured_at' => null,
+            ];
+        }
+        if (! is_string($url)) {
+            throw new BusinessRuleException(FeedbackError::WEBHOOK_INVALID, '企业微信机器人地址无效', 422);
+        }
+
+        return [
+            'webhook_url' => $this->webhooks->assertValid($url),
+            'webhook_configured_at' => now(),
+        ];
     }
 
     private function isDuplicateCode(QueryException $exception): bool

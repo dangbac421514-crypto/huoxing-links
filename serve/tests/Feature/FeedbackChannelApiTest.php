@@ -77,7 +77,6 @@ final class FeedbackChannelApiTest extends TestCase
         $payload['code'] = 'CLIENTCODECLIENTCODE1234';
         $payload['user_id'] = $this->activeFeedbackUser()->id;
         $payload['status'] = false;
-        $payload['webhook_url'] = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=update-secret';
 
         $this->putJson('/api/feedback-channels/'.$channel->id, $payload)
             ->assertOk()
@@ -136,14 +135,12 @@ final class FeedbackChannelApiTest extends TestCase
         $payload['code'] = 'CLIENTCODECLIENTCODE1234';
         $payload['user_id'] = $other->id;
         $payload['status'] = false;
-        $payload['webhook_url'] = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=create-secret';
 
         $response = $this->postJson('/api/feedback-channels', $payload)
             ->assertCreated()
             ->assertJsonPath('status', true)
             ->assertJsonPath('webhook_configured', false)
             ->assertJsonMissingPath('webhook_url');
-        $this->assertStringNotContainsString('create-secret', $response->getContent());
         $this->assertStringNotContainsString('CLIENTCODECLIENTCODE1234', $response->getContent());
         $this->assertMatchesRegularExpression('#^https://feedback\.example/f/[A-Za-z0-9]{24}$#', $response->json('share_url'));
 
@@ -156,7 +153,6 @@ final class FeedbackChannelApiTest extends TestCase
         $this->assertSame($domain->id, $stored->domain_id);
         $raw = DB::table('feedback_channels')->where('id', $stored->id)->first();
         $this->assertTrue($raw->webhook_url === null || $raw->webhook_url === '');
-        $this->assertStringNotContainsString('create-secret', (string) $raw->webhook_url);
     }
 
     public function test_disabled_or_unallowlisted_domain_hides_share_url_without_enumerating_foreign_rows(): void
