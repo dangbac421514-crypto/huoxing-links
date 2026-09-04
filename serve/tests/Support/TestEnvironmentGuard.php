@@ -65,6 +65,9 @@ final class TestEnvironmentGuard
         if (trim((string) env('APP_VISITOR_HASH_KEY')) === '') {
             throw new AssertionFailedError('Unsafe test environment: APP_VISITOR_HASH_KEY');
         }
+        if (strlen(trim((string) env('APP_FEEDBACK_HASH_KEY'))) < 32) {
+            throw new AssertionFailedError('Unsafe test environment: APP_FEEDBACK_HASH_KEY');
+        }
         $visitorTokenKey = base64_decode((string) env('APP_VISITOR_TOKEN_KEY'), true);
         if ($visitorTokenKey === false || strlen($visitorTokenKey) !== 32) {
             throw new AssertionFailedError('Unsafe test environment: APP_VISITOR_TOKEN_KEY');

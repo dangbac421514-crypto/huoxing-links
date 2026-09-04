@@ -23,6 +23,8 @@
         <env name="APP_KEY" value="base64:dGVzdC1rZXl0ZXN0LWtleXRlc3Qta2V5dGVzdC1rZXk="/>
         <env name="APP_VISITOR_HASH_KEY" value="test-visitor-hash-key-not-secret"/>
         <env name="APP_VISITOR_TOKEN_KEY" value="MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="/>
+        <env name="APP_FEEDBACK_HASH_KEY" value="test-feedback-hash-key-not-secret"/>
+        <env name="FEEDBACK_PRIVATE_ROOT" value=""/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="DB_CONNECTION" value="mysql"/>
         <env name="DB_HOST" value="127.0.0.1"/>

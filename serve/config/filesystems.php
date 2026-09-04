@@ -56,6 +56,12 @@ return [
             'throw' => false,
         ],
 
+        'feedback_private' => [
+            'driver' => 'local',
+            'root' => env('FEEDBACK_PRIVATE_ROOT') ?: storage_path('app/private/feedback'),
+            'throw' => true,
+        ],
+
     ],
 
     /*
