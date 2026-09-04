@@ -110,6 +110,20 @@ final class FeedbackAttachmentTest extends TestCase
         $this->assertAttachmentRejected([$huge]);
     }
 
+    public function test_php_rejected_upload_is_unprocessable_and_creates_no_rows(): void
+    {
+        $invalid = new UploadedFile(
+            '/dev/null',
+            'evidence.png',
+            'image/png',
+            UPLOAD_ERR_INI_SIZE,
+            true,
+        );
+        $this->assertFalse($invalid->isValid());
+        $this->assertSame(UPLOAD_ERR_INI_SIZE, $invalid->getError());
+        $this->assertAttachmentRejected([$invalid]);
+    }
+
     public function test_second_file_storage_failure_rolls_back_ticket_and_deletes_first_file(): void
     {
         $real = Storage::disk('feedback_private');

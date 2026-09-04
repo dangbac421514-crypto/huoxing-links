@@ -39,6 +39,7 @@ class StoreFeedbackTicketRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $this->files->set('attachments', $this->attachmentFiles());
+        $this->convertedFiles = null;
     }
 
     /**
@@ -46,14 +47,14 @@ class StoreFeedbackTicketRequest extends FormRequest
      */
     public function attachmentFiles(): array
     {
-        $files = $this->file('attachments', []);
+        $files = $this->files->get('attachments', []);
         if ($files instanceof UploadedFile) {
             $files = [$files];
         }
 
         $present = [];
         foreach (is_array($files) ? $files : [] as $file) {
-            if ($file instanceof UploadedFile && $file->isValid()) {
+            if ($file instanceof UploadedFile && $file->getError() !== UPLOAD_ERR_NO_FILE) {
                 $present[] = $file;
             }
         }
