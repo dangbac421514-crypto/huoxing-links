@@ -245,6 +245,7 @@ onMounted(loadList)
 </script>
 
 <template>
+  <div class="feedback-page">
   <el-card>
     <div class="header">
       <div>
@@ -339,9 +340,14 @@ onMounted(loadList)
     @update:visible="closeTicketDrawer"
     @updated="onTicketUpdated"
   ></ticket-drawer>
+  </div>
 </template>
 
 <style scoped lang="scss">
+.feedback-page {
+  overflow-x: hidden;
+  max-width: 100%;
+}
 .header {
   display: flex;
   justify-content: space-between;

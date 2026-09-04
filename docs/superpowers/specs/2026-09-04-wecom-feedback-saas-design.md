@@ -1,7 +1,7 @@
 # 企业微信客诉受理 SaaS 接入设计
 
 日期：2026-09-04
-状态：书面设计已获用户批准，进入实施计划
+状态：实现完成，待外部部署验收
 代码基线：`codex/full-function-implementation@c8c064926af7d5d32c958306ca3f2be68a4021c1`
 任务分支：`codex/wecom-feedback-saas`
 

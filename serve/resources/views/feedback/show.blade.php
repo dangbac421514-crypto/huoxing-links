@@ -109,7 +109,7 @@
                     <span>我已阅读并同意上述说明</span>
                 </label>
 
-                <button type="submit">提交反馈</button>
+                <button type="submit" data-testid="feedback-submit">提交反馈</button>
             </form>
         </section>
     </main>
@@ -156,10 +156,14 @@
                             var result = document.createElement('div');
                             var heading = document.createElement('p');
                             heading.textContent = '提交成功';
-                            var number = document.createElement('p');
-                            number.textContent = '工单号：' + (body.public_no || '');
+                            var numberLine = document.createElement('p');
+                            numberLine.appendChild(document.createTextNode('工单号：'));
+                            var number = document.createElement('span');
+                            number.setAttribute('data-testid', 'feedback-public-no');
+                            number.textContent = body.public_no || '';
+                            numberLine.appendChild(number);
                             result.appendChild(heading);
-                            result.appendChild(number);
+                            result.appendChild(numberLine);
                             form.replaceWith(result);
                         });
                     }

@@ -6,3 +6,8 @@
 !.env.development.example
 .env.backup
 .env.*.backup
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/e2e/.feedback-e2e-state.json
