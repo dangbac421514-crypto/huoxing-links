@@ -83,7 +83,7 @@
             <p class="notice">本页面由上述商家运营，并非企业微信官方投诉入口</p>
         </section>
         <section class="card">
-            <form method="post" action="/f/{{ $channel->code }}/tickets" enctype="multipart/form-data">
+            <form id="feedback-form" method="post" action="/f/{{ $channel->code }}/tickets" enctype="multipart/form-data">
                 @csrf
                 <label for="category">问题分类</label>
                 <select id="category" name="category" required>
@@ -113,5 +113,50 @@
             </form>
         </section>
     </main>
+    <script>
+        (function () {
+            var form = document.getElementById('feedback-form');
+            if (!form || !window.crypto || typeof window.crypto.randomUUID !== 'function') {
+                return;
+            }
+            var button = form.querySelector('button[type="submit"]');
+            var idempotencyKey = window.crypto.randomUUID();
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+                if (!button || button.disabled) {
+                    return;
+                }
+                button.disabled = true;
+                var data = new FormData(form);
+                data.set('idempotency_key', idempotencyKey);
+                fetch(form.getAttribute('action'), {
+                    method: 'POST',
+                    body: data,
+                    credentials: 'same-origin',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                }).then(function (response) {
+                    if (response.status === 200 || response.status === 201) {
+                        return response.json().then(function (body) {
+                            idempotencyKey = window.crypto.randomUUID();
+                            var result = document.createElement('div');
+                            var heading = document.createElement('p');
+                            heading.textContent = '提交成功';
+                            var number = document.createElement('p');
+                            number.textContent = '工单号：' + (body.public_no || '');
+                            result.appendChild(heading);
+                            result.appendChild(number);
+                            form.replaceWith(result);
+                        });
+                    }
+                    button.disabled = false;
+                }).catch(function () {
+                    button.disabled = false;
+                });
+            });
+        })();
+    </script>
 </body>
 </html>

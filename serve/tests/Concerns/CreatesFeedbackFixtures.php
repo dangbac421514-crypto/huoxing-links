@@ -157,7 +157,8 @@ trait CreatesFeedbackFixtures
         $host = parse_url((string) $channel->domain->url, PHP_URL_HOST);
 
         return $this->withServerVariables(['HTTP_HOST' => $host])
-            ->post('/f/'.$channel->code.'/tickets', $payload);
+            ->withHeaders(['Accept' => 'application/json'])
+            ->post('https://'.$host.'/f/'.$channel->code.'/tickets', $payload);
     }
 
     protected function actingAsFeedbackOwner(FeedbackTicket $ticket): void
