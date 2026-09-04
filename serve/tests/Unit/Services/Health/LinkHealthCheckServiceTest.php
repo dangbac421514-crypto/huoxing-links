@@ -176,6 +176,47 @@ final class LinkHealthCheckServiceTest extends TestCase
         $this->assertSame(0, Redis::connection('default')->exists('link:qr:'.$link->id.':cursor:accumulate'));
     }
 
+    public function test_landing_h5_health_check_accepts_a_non_expired_qr_without_a_mini_reference(): void
+    {
+        $link = $this->landingLinkWithQrs([
+            ['sort' => 1, 'path' => 'h5.png', 'expired_at' => '2026-09-03', 'uv_limit_num' => 1],
+        ]);
+        $config = $link->config;
+        $config['min_id'] = null;
+        $link->config = $config;
+        $link->save();
+        $at = CarbonImmutable::parse('2026-09-02 12:00:00', 'Asia/Shanghai');
+
+        app(LinkHealthCheckService::class)->check($link->fresh(), $at);
+
+        $stored = $link->fresh();
+        $this->assertTrue((bool) $stored->health_status);
+        $this->assertNull($stored->health_error_code);
+        $this->assertSame(0, Redis::connection('default')->exists('link:qr:'.$link->id.':accumulate'));
+        $this->assertSame(0, Redis::connection('default')->exists('link:qr:'.$link->id.':cursor:accumulate'));
+    }
+
+    public function test_landing_health_check_rejects_an_invalid_mini_reference_even_with_a_valid_qr(): void
+    {
+        $link = $this->landingLinkWithQrs([
+            ['sort' => 1, 'path' => 'h5.png', 'expired_at' => '2026-09-03', 'uv_limit_num' => 1],
+        ]);
+        $config = $link->config;
+        $config['min_id'] = 999999;
+        $link->config = $config;
+        $link->save();
+
+        app(LinkHealthCheckService::class)->check(
+            $link->fresh(),
+            CarbonImmutable::parse('2026-09-02 12:00:00', 'Asia/Shanghai'),
+        );
+
+        $stored = $link->fresh();
+        $this->assertFalse((bool) $stored->health_status);
+        $this->assertSame('LANDING_MINI_HEALTH_FAILED', $stored->health_error_code);
+        $this->assertSame(0, Redis::connection('default')->dbsize());
+    }
+
     public function test_landing_health_check_rejects_expired_or_malformed_qr_without_touching_qr_counters(): void
     {
         $link = $this->landingLinkWithQrs([

@@ -7,6 +7,7 @@ use App\Models\Domain;
 use App\Models\FeedbackChannel;
 use App\Models\User;
 use App\Models\VipPackage;
+use App\Services\AdminProvisioner;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Artisan;
@@ -40,6 +41,9 @@ if (! $package instanceof VipPackage) {
 
 $username = '13800138000';
 $password = bin2hex(random_bytes(16));
+$adminUsername = 'ReadyAdmin2026';
+$adminPassword = bin2hex(random_bytes(16));
+app(AdminProvisioner::class)->provision($adminUsername, $adminPassword);
 $start = CarbonImmutable::now('Asia/Shanghai')->subMinute();
 
 $user = User::query()->create([
@@ -77,4 +81,6 @@ echo json_encode([
     'username' => $username,
     'password' => $password,
     'channel_code' => $channel->code,
+    'admin_username' => $adminUsername,
+    'admin_password' => $adminPassword,
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), "\n";

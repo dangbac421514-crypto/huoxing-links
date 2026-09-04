@@ -7,7 +7,7 @@ const state = JSON.parse(process.env.FEEDBACK_E2E_STATE ?? '{}') as {
   channel_code: string
 }
 const backend = 'http://127.0.0.1:8090'
-const admin = 'http://127.0.0.1:4174'
+const admin = process.env.E2E_BUILT === '1' ? `${backend}/web` : 'http://127.0.0.1:4174'
 const ticketBody = '这是一条浏览器端客诉受理验收记录'
 const pngBase64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='

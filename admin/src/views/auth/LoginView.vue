@@ -33,8 +33,9 @@ const submit = (formEl?: FormInstance) => {
     userStore
       .login(loginData.value, true)
       .then(() => {
-        router.push('/home')
+        return router.push('/home')
       })
+      .catch(() => { /* 请求错误已由 HTTP 边界显示，保留表单供重试。 */ })
       .finally(loading.end)
   })
 }
@@ -55,7 +56,7 @@ onMounted(() => {
     }, 100)
   }
   // 已经登录了吗？
-  if (userStore.tokenInfo) {
+  if (userStore.getToken()) {
     router.push('/home')
   }
 })

@@ -46,14 +46,19 @@ http.interceptors.response.use(
     return response
   },
   (error) => {
-    if ([400, 422].includes(error.response.status)) {
-      ElMessage.error(error.response.data.message)
-    } else if (error.response.status === 500) {
+    const status = error.response?.status
+    if (!error.response) {
+      ElMessage.error('网络连接失败，请检查网络后重试')
+    } else if ([400, 422].includes(status)) {
+      ElMessage.error(error.response.data?.message || '提交内容有误，请检查后重试')
+    } else if (status >= 500) {
       ElMessage.error('服务器错误！请稍后再试')
-    } else if (error.response.status === 401) {
+    } else if (status === 403 && error.response.data?.code !== 'PASSWORD_CHANGE_REQUIRED') {
+      ElMessage.error(error.response.data?.message || '没有权限执行此操作')
+    } else if (status === 401) {
       // 未登录/登录过期
-      router.push('/login').catch(() => {
-        ElMessage.error('/login路由不存在')
+      userStore.logout().then(() => {
+        if (router.currentRoute.value.path !== '/login') return router.replace('/login')
       })
     }
     return Promise.reject(error)

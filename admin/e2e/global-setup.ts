@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 const e2eDir = path.resolve(process.cwd(), 'e2e')
@@ -24,6 +24,13 @@ function extractJsonObject(stdout: string): string {
 }
 
 export default function globalSetup(): void {
+  const publicDir = path.resolve(process.cwd(), '../serve/public')
+  const storageDir = path.resolve(process.cwd(), '../serve/storage/app/public')
+  mkdirSync(storageDir, { recursive: true })
+  if (!existsSync(path.join(publicDir, 'storage'))) symlinkSync('../storage/app/public', path.join(publicDir, 'storage'))
+  if (process.env.E2E_BUILT === '1' && !existsSync(path.join(publicDir, 'web'))) {
+    symlinkSync('../../admin/dist', path.join(publicDir, 'web'))
+  }
   const result = spawnSync(testEnv, ['php', seed], {
     encoding: 'utf8',
     env: process.env,
@@ -42,6 +49,6 @@ export default function globalSetup(): void {
     throw new Error('E2E seed JSON keys missing')
   }
   process.env.FEEDBACK_E2E_STATE = json
-  writeFileSync(stateFile, json)
+  writeFileSync(stateFile, json, { mode: 0o600 })
   console.log(`e2e seed ready; JSON keys present: ${keys.join(',')}`)
 }

@@ -12,6 +12,14 @@ The repository is released under the terms in [`LICENSE`](LICENSE). Third-party
 license and attribution obligations are recorded in
 [`docs/compliance/license-inventory.md`](docs/compliance/license-inventory.md).
 
+## Web release
+
+Build/package, deployment prerequisites and first use are documented in
+[`docs/ready-to-use-deployment.md`](docs/ready-to-use-deployment.md).
+`bash deploy.sh --help` explains the read-only preflight; it never silently
+initializes a production database. Release verification is recorded in
+[`docs/ready-to-use-acceptance.md`](docs/ready-to-use-acceptance.md).
+
 ## 商家客诉受理
 
 The administration client includes 商家客诉受理: a tenant-owned after-sales
