@@ -53,6 +53,17 @@ const apiRouter: IMenu[] = [
     ]
   },
   {
+    path: '/feedback',
+    name: 'feedback',
+    meta: {
+      title: '客诉受理',
+      icon: 'menu-link',
+      iconIn: 'menu-link-in',
+      permission: ['admin', 'vip']
+    },
+    component: '/feedback/index'
+  },
+  {
     path: '/data',
     name: 'data',
     redirect: '/data',

@@ -98,5 +98,11 @@ export default {
       ...config,
       data
     })
+  },
+  patch<T, D>(url: string, data?: D, config?: AxiosRequestConfig): Promise<T> {
+    return this.request<T>('patch', url, {
+      ...config,
+      data
+    })
   }
 }
