@@ -56,3 +56,14 @@ Composer reported `composer.json is valid but your composer.lock has some
 errors` and specifically that the lock file is not up to date with
 `composer.json`. This is an intentional baseline finding for foundation Task
 1; this task does not fix it.
+
+## 2026-09-04 客诉受理 SaaS
+
+本轮按“Laravel helpdesk / customer feedback ticket”抽象需求检索 GitHub；未提交私有源码、域名、凭据或客户数据。
+
+| Capability | Candidate | URL | Version/commit | License | Maintenance and security signal | Adopt/reject reason |
+| --- | --- | --- | --- | --- | --- | --- |
+| Ticket system | FreeScout | https://github.com/freescout-help-desk/freescout | `dist@3b471b17cfc9aa3f7047241cb34ab91eb1a790c9` | AGPL-3.0 | Active on 2026-09-04; Laravel 5.5; recent published advisories include high-severity SSRF, authorization, and attachment issues | **Reject** as code/dependency because of strong copyleft, obsolete framework boundary, and excessive attack surface; concept-only reference for ticket events. |
+| Ticket system | Faveo Helpdesk | https://github.com/faveosuite/faveo-helpdesk | `development@6568aa45f89b78028b05cddfb2d37c171d2fbab1` | OSL-3.0 | Repository active, but default-branch head is old; Laravel 9 and multiple `dev-*` dependencies | **Reject** because license, runtime, and supply-chain profile do not match the approved Laravel 13 system. |
+| Ticket system | ruswan/helpdesk-laravel | https://github.com/ruswan/helpdesk-laravel | `main@17179825f3663651452c3fc664a5de3310899d6d` | MIT | Laravel 12 + Filament 3; 104 stars; no repository-level published advisory found in the checked API, which is not proof of absence | **Reject** as a dependency because Filament/Livewire duplicates the existing Vue admin; use only as a low-trust structural reference. |
+| Implementation primitives | Laravel framework facilities already installed | https://github.com/laravel/framework/tree/v13.29.0 | v13.29.0 | MIT | Existing lock, official maintained framework | **Adopt** validation, encrypted casts, Filesystem, HTTP Client, queues, rate limiting, and database transactions; no new production dependency. |

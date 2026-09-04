@@ -175,6 +175,13 @@ The mini-program manifest declares no npm runtime dependencies.
 | vue-cropper | ^1.1.4 | 1.1.4 | ISC |
 | vue-router | ^4.2.2 | 4.2.2 | MIT |
 
+## Development-only browser tests
+
+`@playwright/test` 1.62.1 is an `admin/` development dependency licensed
+Apache-2.0. It is not a production runtime dependency. This inventory refresh
+does not change Composer production requirements, the Composer lock's
+production package set, or the npm production table above.
+
 ## NOTICE and release decision
 
 Apache-2.0 redistribution requires retaining applicable copyright, patent,

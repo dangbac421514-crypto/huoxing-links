@@ -40,7 +40,11 @@ export default ({ mode }: ConfigEnv): UserConfigExport => {
         [env.VITE_PROXY_PATH]: {
           target: env.VITE_API_URL,
           changeOrigin: true,
-          rewrite: (path) => path.replace(env.VITE_PROXY_PATH, '')
+          ...(mode === 'e2e'
+            ? {}
+            : {
+                rewrite: (path) => path.replace(env.VITE_PROXY_PATH, '')
+              })
         },
       }
     },
