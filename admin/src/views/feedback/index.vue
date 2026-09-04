@@ -11,9 +11,16 @@ import {
   ApiFeedbackChannels,
   ApiUpdateFeedbackChannel
 } from '@/api/feedback'
-import type { FeedbackChannel, FeedbackChannelForm, FeedbackChannelPayload } from '@/models/feedback'
+import type {
+  FeedbackChannel,
+  FeedbackChannelForm,
+  FeedbackChannelPayload,
+  FeedbackTicketListItem
+} from '@/models/feedback'
 import { setClipboard } from '@/utils'
 import ChannelForm from '@/views/feedback/components/ChannelForm.vue'
+import TicketDrawer from '@/views/feedback/components/TicketDrawer.vue'
+import TicketList from '@/views/feedback/components/TicketList.vue'
 
 const list = ref<FeedbackChannel[]>([])
 const listLoading = ref(false)
@@ -25,6 +32,9 @@ const formVisible = ref(false)
 const formLoading = ref(false)
 const detailData = ref<FeedbackChannel | null>(null)
 const editingId = ref<number | null>(null)
+const ticketListRef = ref<{ reload: () => void } | null>(null)
+const ticketDrawerVisible = ref(false)
+const activeTicketId = ref<number | null>(null)
 
 const loadList = () => {
   listLoading.value = true
@@ -215,6 +225,22 @@ const currentChangeHandle = (val: number) => {
   loadList()
 }
 
+const openTicket = (row: FeedbackTicketListItem) => {
+  activeTicketId.value = row.id
+  ticketDrawerVisible.value = true
+}
+
+const closeTicketDrawer = (visible: boolean) => {
+  ticketDrawerVisible.value = visible
+  if (!visible) {
+    activeTicketId.value = null
+  }
+}
+
+const onTicketUpdated = () => {
+  ticketListRef.value?.reload()
+}
+
 onMounted(loadList)
 </script>
 
@@ -305,6 +331,14 @@ onMounted(loadList)
   >
     <channel-form @clear-webhook="clearWebhook"></channel-form>
   </form-modal>
+
+  <ticket-list ref="ticketListRef" class="ticket-workbench" @open="openTicket"></ticket-list>
+  <ticket-drawer
+    :visible="ticketDrawerVisible"
+    :ticket-id="activeTicketId"
+    @update:visible="closeTicketDrawer"
+    @updated="onTicketUpdated"
+  ></ticket-drawer>
 </template>
 
 <style scoped lang="scss">
@@ -325,5 +359,9 @@ onMounted(loadList)
   max-width: 720px;
   color: #666;
   line-height: 1.5;
+}
+.ticket-workbench {
+  margin-top: 16px;
+  overflow-x: hidden;
 }
 </style>
