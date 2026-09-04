@@ -135,6 +135,27 @@ LUA;
     }
 
     /**
+     * Validate landing QR configuration without reserving a code or reading
+     * counters. A configured, non-expired candidate is enough for health;
+     * whether its counter is currently full is a runtime availability concern.
+     */
+    public function configurationHealthy(Link $link, CarbonImmutable $at): bool
+    {
+        try {
+            $specification = $this->specification($link, $at);
+            foreach ($specification['candidates'] as $candidate) {
+                if ($candidate['expires_at'] === 0 || $candidate['expires_at'] > $at->getTimestamp()) {
+                    return true;
+                }
+            }
+        } catch (Throwable) {
+            return false;
+        }
+
+        return false;
+    }
+
+    /**
      * @return array{
      *     mode: string,
      *     scope: string,

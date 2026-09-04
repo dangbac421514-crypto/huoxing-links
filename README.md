@@ -12,6 +12,20 @@ The repository is released under the terms in [`LICENSE`](LICENSE). Third-party
 license and attribution obligations are recorded in
 [`docs/compliance/license-inventory.md`](docs/compliance/license-inventory.md).
 
+## 商家客诉受理
+
+The administration client includes 商家客诉受理: a tenant-owned after-sales
+feedback channel, a public `/f/{code}` form, a ticket workbench, private
+attachments, and optional WeCom group-robot notifications. The public page is
+merchant-operated after-sales feedback, not an official WeCom complaint entry.
+
+Operator runbook: [`docs/feedback-operations.md`](docs/feedback-operations.md).
+Isolated browser acceptance, from `admin/`:
+
+```bash
+npx --yes --no-audit --package=pnpm@9.15.9 -- pnpm exec playwright test
+```
+
 ## Scope and evidence boundary
 
 The foundation gate covers migrations, idempotent seeders, authentication,

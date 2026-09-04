@@ -4,8 +4,8 @@ namespace Tests\Unit\Services;
 
 use App\Enums\LinkType;
 use App\Models\Link;
-use App\Support\LinkError;
 use App\Services\LinkAccessPolicy;
+use App\Support\LinkError;
 use App\Support\LinkTypeParser;
 use Carbon\CarbonImmutable;
 use Tests\Concerns\CreatesLinkFixtures;
@@ -22,7 +22,7 @@ final class LinkAccessPolicyTest extends TestCase
 
         $this->assertSame(LinkError::LINK_NOT_FOUND, $policy->check(null, $at)->errorCode);
 
-        $owner = $this->activeMemberWithUvLimit(10);
+        $owner = $this->activeMemberWithUvLimit(10, $at);
         $link = Link::query()->create([
             'user_id' => $owner->id,
             'title' => 'Disabled',
@@ -45,7 +45,7 @@ final class LinkAccessPolicyTest extends TestCase
     public function test_expired_at_is_not_an_access_gate_and_unknown_type_is_stable(): void
     {
         $at = CarbonImmutable::parse('2026-09-02 12:00:00', 'Asia/Shanghai');
-        $owner = $this->activeMemberWithUvLimit(10);
+        $owner = $this->activeMemberWithUvLimit(10, $at);
         $link = Link::query()->create([
             'user_id' => $owner->id,
             'title' => 'Permanent',
@@ -69,7 +69,7 @@ final class LinkAccessPolicyTest extends TestCase
     public function test_disabled_owner_is_rejected_but_membership_and_package_do_not_gate_cards(): void
     {
         $at = CarbonImmutable::parse('2026-09-02 12:00:00', 'Asia/Shanghai');
-        $owner = $this->activeMemberWithUvLimit(10);
+        $owner = $this->activeMemberWithUvLimit(10, $at);
         $link = Link::query()->create([
             'user_id' => $owner->id,
             'title' => 'Policy',
@@ -108,7 +108,7 @@ final class LinkAccessPolicyTest extends TestCase
     public function test_rejected_raw_type_values_return_unsupported_policy_decisions_without_enum_errors(): void
     {
         $at = CarbonImmutable::parse('2026-09-02 12:00:00', 'Asia/Shanghai');
-        $owner = $this->activeMemberWithUvLimit(10);
+        $owner = $this->activeMemberWithUvLimit(10, $at);
         $link = Link::query()->create([
             'user_id' => $owner->id,
             'title' => 'Strict type',
@@ -129,5 +129,4 @@ final class LinkAccessPolicyTest extends TestCase
             $this->assertSame(LinkError::LINK_TYPE_UNSUPPORTED, app(LinkAccessPolicy::class)->check($link, $at)->errorCode);
         }
     }
-
 }

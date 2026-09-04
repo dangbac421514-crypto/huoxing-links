@@ -4,6 +4,9 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CaptchaController;
 use App\Http\Controllers\Api\ConfigController;
 use App\Http\Controllers\Api\DomainController;
+use App\Http\Controllers\Api\FeedbackAttachmentController;
+use App\Http\Controllers\Api\FeedbackChannelController;
+use App\Http\Controllers\Api\FeedbackTicketController;
 use App\Http\Controllers\Api\IndexController;
 use App\Http\Controllers\Api\JumpController;
 use App\Http\Controllers\Api\LinkController;
@@ -57,6 +60,20 @@ Route::middleware(ApiAuth::class)->group(function (Router $router) {
     $router->patch('/links/{id}/status', [LinkController::class, 'status']);
     $router->apiResource('/links', LinkController::class);
     $router->get('link-list', [LinkController::class, 'link_list']); // 获取下拉数据源
+
+    $router->get('/feedback-channels', [FeedbackChannelController::class, 'index']);
+    $router->post('/feedback-channels', [FeedbackChannelController::class, 'store']);
+    $router->patch('/feedback-channels/{id}/status', [FeedbackChannelController::class, 'setStatus']);
+    $router->get('/feedback-channels/{id}', [FeedbackChannelController::class, 'show']);
+    $router->put('/feedback-channels/{id}', [FeedbackChannelController::class, 'update']);
+    $router->post('/feedback-channels/{id}/test-notification', [FeedbackChannelController::class, 'testNotification']);
+
+    $router->get('/feedback-tickets', [FeedbackTicketController::class, 'index']);
+    $router->patch('/feedback-tickets/{id}/status', [FeedbackTicketController::class, 'setStatus']);
+    $router->post('/feedback-tickets/{id}/notes', [FeedbackTicketController::class, 'addNote']);
+    $router->get('/feedback-tickets/{id}', [FeedbackTicketController::class, 'show']);
+    $router->get('/feedback-attachments/{id}/download', [FeedbackAttachmentController::class, 'download'])
+        ->name('feedback-attachments.download');
 
     $router->get('/agent-invite', [UserController::class, 'invite']); // 邀请记录
 

@@ -14,8 +14,10 @@ class Kernel extends ConsoleKernel
     {
         // 会员到期
         $schedule->command('app:vip-expired')->hourly()->withoutOverlapping();
-        // URL状态检测
-        $schedule->command('app:chk-link')->daily();
+        // 链接健康检查
+        $schedule->command('app:links-health-check')->everyTenMinutes()->withoutOverlapping(9);
+        // 客诉个人信息到期清理
+        $schedule->command('app:feedback-purge')->dailyAt('02:30')->timezone('Asia/Shanghai')->withoutOverlapping(120);
     }
 
     /**

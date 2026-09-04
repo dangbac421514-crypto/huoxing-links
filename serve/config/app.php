@@ -66,6 +66,7 @@ return [
     ))),
     'visitor_hash_key' => env('APP_VISITOR_HASH_KEY'),
     'visitor_token_key' => env('APP_VISITOR_TOKEN_KEY'),
+    'feedback_hash_key' => env('APP_FEEDBACK_HASH_KEY'),
 
     'asset_url' => env('ASSET_URL'),
 

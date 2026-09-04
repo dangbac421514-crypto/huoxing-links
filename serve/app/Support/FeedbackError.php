@@ -1,0 +1,22 @@
+<?php
+
+namespace App\Support;
+
+final class FeedbackError
+{
+    public const CHANNEL_NOT_FOUND = 'CHANNEL_NOT_FOUND';
+
+    public const CHANNEL_DISABLED = 'CHANNEL_DISABLED';
+
+    public const DOMAIN_UNAVAILABLE = 'DOMAIN_UNAVAILABLE';
+
+    public const INVALID_STATE = 'INVALID_STATE';
+
+    public const WEBHOOK_INVALID = 'WEBHOOK_INVALID';
+
+    public const NOTIFICATION_UNCONFIGURED = 'NOTIFICATION_UNCONFIGURED';
+
+    public const NOTIFICATION_FAILED = 'NOTIFICATION_FAILED';
+
+    public const ATTACHMENT_UNAVAILABLE = 'ATTACHMENT_UNAVAILABLE';
+}
