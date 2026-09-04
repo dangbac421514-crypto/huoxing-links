@@ -34,6 +34,77 @@ async function assertNoHorizontalOverflow(page: Page) {
   expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1)
 }
 
+type FeedbackTicketPostCapture = {
+  status: number
+  public_no: string
+  idempotency_key: string
+}
+
+declare global {
+  interface Window {
+    __feedbackTicketPosts: FeedbackTicketPostCapture[]
+    __lastTicketFormData?: FormData
+    __lastTicketUrl?: string
+  }
+}
+
+async function installTicketPostCapture(page: Page) {
+  await page.evaluate(() => {
+    const originalFetch = window.fetch.bind(window)
+    const state = window
+    state.__feedbackTicketPosts = []
+    window.fetch = async (input, init) => {
+      const request = new Request(input, init)
+      const pathname = new URL(request.url, window.location.href).pathname
+      if (request.method !== 'POST' || !/\/f\/[^/]+\/tickets$/.test(pathname)) {
+        return originalFetch(request)
+      }
+      const stored = request.clone()
+      const response = await originalFetch(request)
+      const formData = await stored.formData()
+      const payload = await response.clone().json()
+      state.__feedbackTicketPosts.push({
+        status: response.status,
+        public_no: String(payload.public_no || ''),
+        idempotency_key: String(formData.get('idempotency_key') || ''),
+      })
+      state.__lastTicketFormData = formData
+      state.__lastTicketUrl = request.url
+      return response
+    }
+  })
+}
+
+async function replayCapturedTicketPost(page: Page): Promise<FeedbackTicketPostCapture> {
+  return page.evaluate(async () => {
+    const formData = window.__lastTicketFormData
+    const url = window.__lastTicketUrl
+    const posts = window.__feedbackTicketPosts
+    if (!formData || !url) {
+      throw new Error('missing captured ticket submit')
+    }
+    const before = posts.length
+    const idempotencyKey = String(formData.get('idempotency_key') || '')
+    await window.fetch(url, {
+      method: 'POST',
+      body: formData,
+      credentials: 'same-origin',
+      headers: {
+        Accept: 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    })
+    const capture = posts[before]
+    if (!capture) {
+      throw new Error('retry was not captured')
+    }
+    if (capture.idempotency_key !== idempotencyKey) {
+      throw new Error('retry idempotency key mismatch')
+    }
+    return capture
+  })
+}
+
 test('mobile submit reaches tenant ticket workbench', async ({ page }, testInfo) => {
   const fixturePath = testInfo.outputPath('feedback.png')
   await writeFile(fixturePath, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'))
@@ -82,30 +153,29 @@ test('duplicate submit retry returns the same public number', async ({ page }, t
   const fixturePath = await writePng(testInfo)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`${backend}/f/${state.channel_code}`)
+  await installTicketPostCapture(page)
   await page.selectOption('[name=category]', { index: 1 })
   await page.fill('[name=content]', ticketBody)
   await page.setInputFiles('[name="attachments[]"]', fixturePath)
   await page.check('[name=privacy_accepted]')
 
-  let posts = 0
-  await page.route('**/f/*/tickets', async (route) => {
-    if (route.request().method() !== 'POST') {
-      await route.continue()
-      return
-    }
-    posts += 1
-    if (posts === 1) {
-      await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
-      return
-    }
-    await route.continue()
-  })
-
-  await page.click('[data-testid=feedback-submit]')
-  await expect(page.getByTestId('feedback-submit')).toBeEnabled()
   await page.click('[data-testid=feedback-submit]')
   await expect(page.getByTestId('feedback-public-no')).toBeVisible()
-  expect(posts).toBeGreaterThanOrEqual(2)
+  const created = await page.evaluate(() => window.__feedbackTicketPosts[0])
+
+  expect(created.status).toBe(201)
+  expect(created.public_no).toMatch(/^FB-[A-Z0-9]{16}$/)
+  expect(created.idempotency_key).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  )
+  await expect(page.getByTestId('feedback-public-no')).toHaveText(created.public_no)
+
+  const replayed = await replayCapturedTicketPost(page)
+
+  expect(replayed.status).toBe(200)
+  expect(replayed.idempotency_key).toBe(created.idempotency_key)
+  expect(replayed.public_no).toBe(created.public_no)
+  await expect(page.getByTestId('feedback-public-no')).toHaveText(created.public_no)
 })
 
 test('channel create and copy share url', async ({ page }) => {
