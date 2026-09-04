@@ -36,7 +36,7 @@ git rev-parse --verify origin/codex/wecom-feedback-saas
 git diff --exit-code origin/codex/wecom-feedback-saas...HEAD
 docker compose -f compose.test.yaml up -d --wait
 composer install --working-dir=serve --no-interaction
-npx --yes pnpm@9.15.9 --dir admin install --frozen-lockfile
+npx --yes --no-audit --package=pnpm@9.15.9 -- pnpm --dir admin install --frozen-lockfile
 ```
 
 Expected: worktree clean；本地与远端任务分支指向同一提交；MySQL/Redis healthy；依赖安装只生成被忽略的 `vendor/node_modules`，不改锁文件。
@@ -760,7 +760,7 @@ Import the interfaces/functions from the new view so `vue-tsc` must resolve the 
 
 - [ ] **Step 2: Run type check to verify red**
 
-Run: `npx --yes pnpm@9.15.9 --dir admin type-check`
+Run: `npx --yes --no-audit --package=pnpm@9.15.9 -- pnpm --dir admin type-check`
 
 Expected: FAIL because feedback modules do not exist.
 
@@ -770,7 +770,7 @@ Add `patch<T,D>()` to `http.ts` using the same request wrapper as `post/put`. Ad
 
 - [ ] **Step 4: Run type check and production build**
 
-Run: `npx --yes pnpm@9.15.9 --dir admin type-check && npx --yes pnpm@9.15.9 --dir admin build-only`
+Run: `npx --yes --no-audit --package=pnpm@9.15.9 -- pnpm --dir admin type-check && npx --yes --no-audit --package=pnpm@9.15.9 -- pnpm --dir admin build-only`
 
 Expected: PASS；no route resolves to 404 component and no client code contains `qyapi.weixin.qq.com` test keys.
 
@@ -812,7 +812,7 @@ Reference `TicketList` and `TicketDrawer` from `feedback/index.vue` before creat
 
 - [ ] **Step 2: Run type check to verify red**
 
-Run: `npx --yes pnpm@9.15.9 --dir admin type-check`
+Run: `npx --yes --no-audit --package=pnpm@9.15.9 -- pnpm --dir admin type-check`
 
 Expected: FAIL on missing ticket components/contracts.
 
@@ -824,7 +824,7 @@ At ≤700px the drawer uses full viewport width, 16px inputs and ≥44px submit/
 
 - [ ] **Step 4: Run type, build and unsafe-render scan**
 
-Run: `npx --yes pnpm@9.15.9 --dir admin type-check && npx --yes pnpm@9.15.9 --dir admin build-only && ! rg -n 'v-html' admin/src/views/feedback`
+Run: `npx --yes --no-audit --package=pnpm@9.15.9 -- pnpm --dir admin type-check && npx --yes --no-audit --package=pnpm@9.15.9 -- pnpm --dir admin build-only && ! rg -n 'v-html' admin/src/views/feedback`
 
 Expected: PASS.
 
@@ -856,7 +856,7 @@ git commit -m "feat: add feedback ticket workbench"
 
 - [ ] **Step 1: Install pinned browser test dependency and write failing E2E**
 
-Run: `npx --yes pnpm@9.15.9 --dir admin add -D @playwright/test@1.62.1`
+Run: `npx --yes --no-audit --package=pnpm@9.15.9 -- pnpm --dir admin add -D @playwright/test@1.62.1`
 
 `seed-feedback-e2e.php` boots Laravel only after `TestEnvironmentGuard::assertSafe()`, runs migrations/seeders, creates an active member/password, enabled `https://127.0.0.1` domain and outputs JSON containing only test username/password/channel code. It never runs when `APP_ENV` or sentinel differs from the test wrapper.
 
@@ -903,13 +903,13 @@ test('mobile submit reaches tenant ticket workbench', async ({ page }, testInfo)
 
 - [ ] **Step 2: Run E2E to verify red**
 
-Run: `docker compose -f compose.test.yaml up -d --wait && npx --yes pnpm@9.15.9 --dir admin exec playwright test e2e/feedback.spec.ts`
+Run: `docker compose -f compose.test.yaml up -d --wait && npx --yes --no-audit --package=pnpm@9.15.9 -- pnpm --dir admin exec playwright test e2e/feedback.spec.ts`
 
 Expected: FAIL until Playwright config, guarded seed and webServer commands are complete.
 
 - [ ] **Step 3: Complete deterministic Playwright setup and operations docs**
 
-Playwright config runs from `admin/`. It starts backend with `cd ../serve && PUBLIC_ORIGIN=https://127.0.0.1 ALLOWED_SHARE_HOSTS=127.0.0.1 bin/test-env php artisan serve --host=127.0.0.1 --port=8090` and Vite with `VITE_PROXY_PATH=/api VITE_API_URL=http://127.0.0.1:8090 VITE_PUBLIC_PATH=/ npx --yes pnpm@9.15.9 dev --mode e2e --host 127.0.0.1 --port 4174`. Add an E2E-only branch in `vite.config.ts`: when mode is `e2e`, proxy `/api` to the origin without stripping `/api`; existing development rewrite remains unchanged. Global setup invokes `../serve/bin/test-env php ../serve/tests/Support/seed-feedback-e2e.php`, captures stdout without printing the test password, and exposes its JSON via `process.env.FEEDBACK_E2E_STATE`. The suite covers desktop + 390px, duplicate-submit retry, channel create/copy, ticket status/note, private attachment download and zero horizontal overflow；Webhook 失败/重试由隔离的 `Http::fake()` 功能测试覆盖，不让浏览器测试连接真实企微端点。
+Playwright config runs from `admin/`. It starts backend with `cd ../serve && PUBLIC_ORIGIN=https://127.0.0.1 ALLOWED_SHARE_HOSTS=127.0.0.1 bin/test-env php artisan serve --host=127.0.0.1 --port=8090` and Vite with `VITE_PROXY_PATH=/api VITE_API_URL=http://127.0.0.1:8090 VITE_PUBLIC_PATH=/ npx --yes --no-audit --package=pnpm@9.15.9 -- pnpm dev --mode e2e --host 127.0.0.1 --port 4174`. Add an E2E-only branch in `vite.config.ts`: when mode is `e2e`, proxy `/api` to the origin without stripping `/api`; existing development rewrite remains unchanged. Global setup invokes `../serve/bin/test-env php ../serve/tests/Support/seed-feedback-e2e.php`, captures stdout without printing the test password, and exposes its JSON via `process.env.FEEDBACK_E2E_STATE`. The suite covers desktop + 390px, duplicate-submit retry, channel create/copy, ticket status/note, private attachment download and zero horizontal overflow；Webhook 失败/重试由隔离的 `Http::fake()` 功能测试覆盖，不让浏览器测试连接真实企微端点。
 
 `docs/feedback-operations.md` documents environment keys, private storage permissions, queue/scheduler checks, domain/HTTPS prerequisites, Webhook rotation, retention command, backup/restore and rollback evidence. README describes only “商家客诉受理”，not competitor claims. License inventory adds Playwright as Apache-2.0 dev-only and confirms no production dependency change. Update spec status to “实现完成，待外部部署验收” only after all checks pass.
 
@@ -921,11 +921,11 @@ Run:
 docker compose -f compose.test.yaml up -d --wait
 serve/bin/test-env php artisan migrate:fresh --seed
 serve/bin/test-env php artisan test
-npx --yes pnpm@9.15.9 --dir admin type-check
-npx --yes pnpm@9.15.9 --dir admin build-only
-npx --yes pnpm@9.15.9 --dir admin exec playwright test
+npx --yes --no-audit --package=pnpm@9.15.9 -- pnpm --dir admin type-check
+npx --yes --no-audit --package=pnpm@9.15.9 -- pnpm --dir admin build-only
+npx --yes --no-audit --package=pnpm@9.15.9 -- pnpm --dir admin exec playwright test
 composer audit --working-dir=serve --locked --no-interaction
-npx --yes pnpm@9.15.9 --dir admin audit --prod
+npx --yes --no-audit --package=pnpm@9.15.9 -- pnpm --dir admin audit --prod
 git diff --check
 git status --short
 ```
