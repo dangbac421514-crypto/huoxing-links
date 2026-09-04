@@ -83,7 +83,7 @@ const renewal = (id: number) => {
       <el-table-column prop="description" label="卡片描述"></el-table-column>
       <el-table-column prop="" label="链接状态">
         <template #default="{ row }">
-          <span v-if="row.status == 1">可用</span>
+          <span v-if="row.effective_status === true">可用</span>
           <span v-else style="color: red">不可用</span>
         </template>
       </el-table-column>

@@ -94,6 +94,15 @@ test('member creates edits copies and deletes a WeCom link through the dashboard
   const target = await page.request.get(`/api/link-target/${code}`)
   expect(target.ok()).toBeTruthy()
   expect(await target.json()).toMatchObject({ code: 0, data: { target: 'https://work.weixin.qq.com/ca/readiness-fixture' } })
+  const id = (await row.getByRole('cell').first().textContent())?.trim()
+  const token = await page.evaluate(() => JSON.parse(localStorage.getItem('token') || '{}').token)
+  const stopped = await page.request.patch(`/api/links/${id}/status`, {
+    headers: { Authorization: `Bearer ${token}` }, data: { manual_status: false }
+  })
+  expect(stopped.status()).toBe(200)
+  await page.getByRole('button', { name: '搜索', exact: true }).click()
+  await expect(row.getByText('不可用', { exact: true })).toBeVisible()
+  expect((await page.request.get(`/api/link-target/${code}`)).status()).toBe(403)
   await row.getByRole('button', { name: '删除', exact: true }).click()
   await page.getByRole('button', { name: '确定', exact: true }).click()
   await expect(row).not.toBeVisible()

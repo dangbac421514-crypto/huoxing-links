@@ -32,7 +32,14 @@ final class LandingMiniHealthChecker implements HealthChecker
                 return HealthCheckResult::unhealthy(self::ERROR_CODE);
             }
 
-            $miniId = $this->positiveInteger($config['min_id'] ?? null);
+            $rawMiniId = $config['min_id'] ?? null;
+            if ($rawMiniId === null || $rawMiniId === '') {
+                return $this->qrs->configurationHealthy($link, $at)
+                    ? HealthCheckResult::healthy()
+                    : HealthCheckResult::unhealthy(self::ERROR_CODE);
+            }
+
+            $miniId = $this->positiveInteger($rawMiniId);
             if ($miniId === null) {
                 return HealthCheckResult::unhealthy(self::ERROR_CODE);
             }
