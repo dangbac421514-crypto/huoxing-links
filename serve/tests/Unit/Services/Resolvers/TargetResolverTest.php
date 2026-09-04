@@ -24,6 +24,7 @@ use App\Services\Resolvers\TargetResolver;
 use App\Services\Resolvers\TargetResolverRegistry;
 use App\Services\Resolvers\WorkWechatTargetResolver;
 use App\Services\WeixinSchemePolicy;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
@@ -221,7 +222,9 @@ final class TargetResolverTest extends TestCase
     public function test_landing_resolver_reserves_one_qr_and_uses_only_code_and_opaque_token(): void
     {
         $link = $this->landingLinkWithQrs([
-            ['sort' => 1, 'path' => 'qr.png', 'expired_at' => '2026-09-03', 'uv_limit_num' => 2],
+            // Keep this candidate valid for the resolver's real current instant;
+            // a historical fixed date turns this behavior test into a clock bomb.
+            ['sort' => 1, 'path' => 'qr.png', 'expired_at' => CarbonImmutable::now('Asia/Shanghai')->addDay()->format('Y-m-d'), 'uv_limit_num' => 2],
         ]);
         $mini = MiniProgram::query()->findOrFail(data_get($link->config, 'min_id'));
         $mini->update(['is_pre_min' => true, 'type' => MiniType::LANDING]);

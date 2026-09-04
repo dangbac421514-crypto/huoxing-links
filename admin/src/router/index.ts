@@ -18,6 +18,11 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/auth/LoginView.vue')
   },
   {
+    path: '/change-password',
+    name: 'change-password',
+    component: () => import('@/views/auth/ChangePasswordView.vue')
+  },
+  {
     path: '/register',
     name: 'register',
     component: () => import('@/views/auth/RegView.vue')
@@ -27,6 +32,7 @@ const routes: RouteRecordRaw[] = [
 // 异步路由
 const asyncRoutes: RouteRecordRaw = {
   path: '/',
+  name: 'app-layout',
   component: LayoutIndex,
   redirect: '/home',
   children: []
@@ -135,9 +141,9 @@ router.beforeEach(async (to, from, next) => {
     return Promise.resolve()
   }
 
-  // 已经登录时访问登录页，重定向到首页
-  if (to.path === '/login' && token) {
-    next('/home')
+  // 首次改密时 /userinfo 被服务端拒绝，此路由只需要已登录的 token。
+  if (to.path === '/change-password') {
+    next()
     return Promise.resolve()
   }
 
@@ -155,8 +161,10 @@ router.beforeEach(async (to, from, next) => {
           next('/admin-home')
           break
         default:
-          return Promise.reject()
+          await userStore.logout()
+          next('/login')
       }
+      return
     }
 
     next()
@@ -166,21 +174,24 @@ router.beforeEach(async (to, from, next) => {
   // 获取用户信息
   try {
     userStore.userInfo = await ApiUserInfo()
-  } catch (e) {
-    // 获取用户信息失败，清除token，重新登录
-    userStore.logout().then(() => {
-      next(`/login`)
-    })
-    return Promise.reject(e)
+  } catch (e: any) {
+    if (e?.response?.status === 403 && e.response.data?.code === 'PASSWORD_CHANGE_REQUIRED') {
+      next('/change-password')
+      return
+    }
+    await userStore.logout()
+    next('/login')
+    return
   }
 
   // 获取用户信息成功，构建路由表
   const menus = JSON.parse(JSON.stringify(apiRouter))
-  routerStore.menuRoutes.push(...generateRoutes(menus))
+  routerStore.menuRoutes = generateRoutes(menus)
   // 获取扁平化路由，将多级路由转换成一级路由
   const keepAliveRoutes = getKeepAliveRoutes(routerStore.menuRoutes, [])
   // 添加动态路由
-  asyncRoutes.children?.push(...keepAliveRoutes)
+  asyncRoutes.children = keepAliveRoutes
+  if (router.hasRoute('app-layout')) router.removeRoute('app-layout')
   router.addRoute(asyncRoutes)
 
   // 保存路由数据

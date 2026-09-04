@@ -1,9 +1,7 @@
 import { defineStore } from 'pinia'
 import type { ILoginRequest, ILoginResponse, IUserInfoResponse } from '@/models/user'
 import { ApiLogin, ApiUserInfo } from '@/api/user'
-import { ApiGetSet } from '@/api/comment'
-import { configStore, userStore } from '@/stores'
-import useAppStore from '@/stores/modules/app'
+import { routerStore, tabsStore } from '@/stores'
 
 // 用户信息
 const TOKEN_KEY = 'token'
@@ -15,23 +13,19 @@ const useUserStore = defineStore('user-store', {
     dialogVisible: false
   }),
   actions: {
-    logout() {
-      return new Promise<void>((resolve) => {
-        localStorage.clear()
-        resolve()
-
-      })
+    async logout() {
+      window.localStorage.removeItem(TOKEN_KEY)
+      window.sessionStorage.removeItem(TOKEN_KEY)
+      this.$reset()
+      routerStore.$reset()
+      tabsStore.$reset()
     },
     login(data: ILoginRequest, remember: boolean = false) {
       return new Promise<void>((resolve, reject) => {
         ApiLogin(data)
           .then((res) => {
             this.setToken(res, remember)
-            // this.dialogVisible = true
-            ApiGetSet().then((res: any) => {
-              configStore.refresh(res)
-              userStore.dialogVisible = true
-            })
+            this.dialogVisible = true
             resolve()
           })
           .catch((err) => {
@@ -40,6 +34,9 @@ const useUserStore = defineStore('user-store', {
       })
     },
     setToken(tokenInfo: ILoginResponse, remember: boolean = false) {
+      window.localStorage.removeItem(TOKEN_KEY)
+      window.sessionStorage.removeItem(TOKEN_KEY)
+      this.userInfo = {} as IUserInfoResponse
       if (remember) {
         window.localStorage.setItem(TOKEN_KEY, JSON.stringify(tokenInfo))
       } else {
@@ -58,6 +55,8 @@ const useUserStore = defineStore('user-store', {
           this.tokenInfo = JSON.parse(tokenInfo)
           return this.tokenInfo.token
         } catch (e) {
+          window.localStorage.removeItem(TOKEN_KEY)
+          window.sessionStorage.removeItem(TOKEN_KEY)
           return ''
         }
       }
